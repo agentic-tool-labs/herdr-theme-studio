@@ -76,7 +76,11 @@ A window 520×720 px (`mod.json` overlay, `kind: "window"`), on the `popover` ba
     one opens the color editor under its row. Sliders are a 4px `input` groove, `accent`
     fill, a 24×16 `foreground` pill thumb ringed in `accent`, centered on the groove
     (`ml(-12).mt(-6)`), the value on the right of the label.
-  - **Library**: Saved looks (pills with a × each, a name input, **Save current**); Import a
+  - **Library**: Saved looks (pills with a × each, a name input, **Save current**). A look holds
+    the dark and light theme picks, the Type settings, the cursor shape and blink, and the glass
+    (without rendered picture paths: Bloom and Frosted are rendered again on apply, since old
+    renders get deleted). Applying one cancels staged changes and puts its glass on the shown
+    personal layout; a look without glass, or on Herdr's own layout, switches to its layout. Import a
     theme (a 130px textarea that also takes a dropped file, a name input, **From clipboard**,
     **Import**); Sidebar button (**Add to sidebar** / **Remove from sidebar**); This theme
     (**Copy theme JSON**, **Show themes folder**).

@@ -504,7 +504,8 @@ export default class ThemeStudio extends View {
   }
 
   pushGlass() {
-    // The tree mods get back can hold an older theme than the one picked, so a push carries the shown pick.
+    // Herdr keeps the theme pick in layouts/.state, apart from the tree's root theme, which can be older.
+    // A push writes the pick into the file too, so the file alone says what's shown.
     const s = settings(), tree = s.theme_dark && s.theme_light ? { ...layout(), theme: { light: s.theme_light, dark: s.theme_dark } } : layout();
     run("layout.set", { layout: applyGlass(tree, this.glass, this.baseColors()) });
   }
@@ -693,6 +694,9 @@ export default class ThemeStudio extends View {
     const look = {
       name, theme_dark: s.theme_dark, theme_light: s.theme_light, layout: shared("layout"),
       settings: { font: s.font_family, font_size: s.font_size, ui_font: s.ui_font_family, font_ligatures: s.font_ligatures, minimum_contrast: s.minimum_contrast },
+      cursor: this.cursorShown(),
+      // Rendered pictures are dropped as newer ones replace them, so a look keeps the recipe and re-renders.
+      glass: this.personal() ? { ...this.glass, bloom: "", frost: "" } : null,
     };
     setShared(K.looks, [...(shared(K.looks) || []).filter((l) => l.name !== name), look]);
     this.lookName.set_value("");
@@ -700,12 +704,17 @@ export default class ThemeStudio extends View {
   }
 
   applyLook(look, cx) {
+    this.cancelAll(cx);
     cx.spawn((cx) => this.guard(cx, `Applying ${look.name}`, async () => {
       await this.writeSettings(look.settings);
       const picks = [look.theme_light, look.theme_dark].filter(Boolean).map((name) => ["app.theme", { name }]);
-      // The layout carries its own glass, so switching to it brings that back too.
-      if (look.layout && look.layout !== shared("layout") && layouts().includes(look.layout)) return this.afterSwitch(["layout.switch", { name: look.layout }], picks);
+      // A look saved with its glass puts it on this layout; an older one (or one on Herdr's own layout,
+      // which takes no glass) switches to the layout it names, which carries its glass as it is now.
+      if (!(look.glass && this.personal()) && look.layout && look.layout !== shared("layout") && layouts().includes(look.layout)) return this.afterSwitch(["layout.switch", { name: look.layout }], picks);
       for (const [c, a] of picks) run(c, a);
+      await this.waitFor(cx, () => settings().theme_dark === (look.theme_dark || settings().theme_dark) && settings().theme_light === (look.theme_light || settings().theme_light), 3000);
+      if (look.cursor) await this.writeCursor(look.cursor);
+      if (look.glass && this.personal()) { this.glassTheme = settings().theme; await this.writeGlass(cx, { ...GLASS_DEFAULT, ...look.glass }); }
       this.say(`${look.name} is on`, "success", cx);
     }));
   }
@@ -1109,7 +1118,7 @@ export default class ThemeStudio extends View {
         .child(h_flex().gap(6)
           .child(Input.new(this.lookName).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
           .child(this.button("look-save", "Save current", t, (_e, cx) => this.saveLook(cx), true))),
-        "A look is your dark and light themes, fonts, layout and glass, applied together."))
+        "A look is everything at once: dark and light themes, type, glass and cursor. Applying one puts its glass on this layout."))
       .when(this.found.length > 0, (el) => el.child(this.section("Theme files on this Mac", t,
         h_flex().flex_wrap().gap(6).children(this.found.map((f) => this.pill(`found-${f.name}`, f.name, false, t, (_e, cx) => this.importFile(f.path, cx)))),
         "iTerm2 themes in Downloads and on the Desktop. Click one to import and use it. The first time, macOS asks whether Herdr may read those folders.")))
