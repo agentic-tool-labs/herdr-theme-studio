@@ -5,26 +5,30 @@ fonts, glass and pane frames. Changes show in the real window as you make them, 
 Studio edits the files Herdr already redraws from. [RECIPE.md](RECIPE.md) is the brief to
 build it from scratch.
 
-![Theme Studio](preview.png)
-
-| Theme manager (Tokyo Night) | Editing colors (Rosé Pine) | Bloom glass, Studio closed (coolnight) |
-|---|---|---|
-| ![Theme manager](docs/screenshots/manager.png) | ![Editor, Colors tab](docs/screenshots/editor.png) | ![Bloom glass](docs/screenshots/window.png) |
-
 ## Install
 
-On [herdr.dev/mods](https://herdr.dev/mods), copy Theme Studio's line and give it to your agent.
+Tell your agent (the line from [Theme Studio on herdr.dev/mods](https://herdr.dev/mods/agentic-tool-labs/herdr-theme-studio)):
+
+```
+Read ~/.config/herdr-app/AGENTS.md, then add this mod: herdr.dev/mods/agentic-tool-labs/herdr-theme-studio
+```
+
 It copies `mods/theme-studio/` into `~/.config/herdr-app/mods/` and merges `keys.json` into yours.
-It also adds the palette icon beside Settings (on Herdr's own
-layout that means switching you to your own copy of it, `<layout>-studio`; ⌃⇧L switches back). Then
-press `ctrl-shift-y` or the icon. By hand: copy that folder yourself and add
-`"ctrl-shift-y": "mod.open:theme-studio"` to the `global` section of your `keys.json`.
+It also adds the palette icon beside Settings. On Herdr's own layout that means switching you to
+your own copy of it (`<layout>-studio`); ⌃⇧L switches back. Then press `ctrl-shift-y` or the icon.
+By hand: copy that folder yourself and add `"ctrl-shift-y": "mod.open:theme-studio"` to the `global` section of your `keys.json`.
 
 Your agent will mention that the Studio runs programs and reads files outside its folder. It runs
 `osascript` to blur the wallpaper and render Bloom, and it reads `.itermcolors` files in Downloads and on
 the Desktop for import.
 
 Requires Herdr app 0.1.13 or later on macOS (Frosted wallpaper and Bloom are macOS only).
+
+![Theme Studio](preview.png)
+
+| Theme manager (Tokyo Night) | Editing colors (Rosé Pine) | Bloom glass, Studio closed (coolnight) |
+|---|---|---|
+| ![Theme manager](docs/screenshots/manager.png) | ![Editor, Colors tab](docs/screenshots/editor.png) | ![Bloom glass](docs/screenshots/window.png) |
 
 **Working on the source:** `./install.sh` copies `mods/theme-studio` into `~/.config/herdr-app` and
 binds `ctrl-shift-y` (needs node). `./install.sh --remove` takes both out; your themes, settings and
