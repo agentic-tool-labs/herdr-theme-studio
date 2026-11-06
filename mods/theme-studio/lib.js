@@ -224,7 +224,7 @@ function studioRadius() {
 // The agents list in the sidebar is Herdr's `agents` mod. The Studio's sizes and hidden parts go in a
 // clone, rebuilt from Herdr's current file, that reads them live from shared "theme-studio.agents".
 export const AGENTS_MOD = "agents-studio";
-export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, time: true, headers: true, icons: true, badge: true };
+export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true };
 const AGENTS_PATCH = [
   ["icon(a.program, 16, t.foreground)", "icon(a.program, studioAgents().icon, t.foreground)"],
   [".h(30)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(9)",
@@ -238,6 +238,11 @@ const AGENTS_PATCH = [
   ["const pic = icon(k.program, 14, t.foreground);", "const pic = icon(k.program, Math.max(8, studioAgents().icon - 2), t.foreground);"],
   [".rounded(8)\n      .h(26)\n      .flex_none()\n      .gap(0)\n      .items_center()\n      .text_size(12.5)",
     ".rounded(8)\n      .h(Math.max(16, studioAgents().row - 4))\n      .flex_none()\n      .gap(0)\n      .items_center()\n      .text_size(studioAgents().text - 0.5)"],
+  ["        .items_center()\n        .text_size(11)\n        .font_medium()", "        .items_center()\n        .text_size(studioAgents().headerText)\n        .font_medium()"],
+  [".child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when)))", ".child(div().flex_none().text_size(studioAgents().timeText).text_color(t.dim).child(duration(now - when)))"],
+  [".child(div().text_size(11.5).font_medium().text_color(t.dim).child(\"Agents\"))", ".child(div().text_size(studioAgents().titleText).font_medium().text_color(t.dim).child(\"Agents\"))"],
+  ["px(6).h(18).rounded(5).bg(t.blocked + \"26\").text_size(10.5)", "px(6).h(studioAgents().badgeText + 7.5).rounded(5).bg(t.blocked + \"26\").text_size(studioAgents().badgeText)"],
+  [".size(14).flex_none().rounded(4).bg(t.blocked + \"26\").text_size(10.5)", ".size(studioAgents().badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + \"26\").text_size(studioAgents().badgeText)"],
 ];
 /** Herdr's agents mod with the Studio's sizes and parts, or null when its code no longer matches. */
 export function patchAgents(src) {

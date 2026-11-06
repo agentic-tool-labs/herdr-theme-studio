@@ -171,13 +171,16 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `import-file=<path>`, `image=<path>` (none: the picker), `revert`.
 - **Agents list**: Herdr's `agents` mod draws it and can't be edited, so the Studio clones it as
   `mods/agents-studio` (`mod.clone`), then rebuilds the clone's `main.js` from Herdr's current one
-  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then nine exact
+  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then fourteen exact
   replacements (`patchAgents` in lib.js; each anchor must match once, else it refuses and Herdr's
   list stays) that read `studioAgents()`, a helper merging `{ row: 30, text: 13, icon: 16, header:
-  30, time, headers, icons, badge: true }` with shared `theme-studio.agents`. The clone reads it on
+  30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time, headers, icons, badge:
+  true }` with shared `theme-studio.agents`. The clone reads it on
   each render, so changes show at once. Every layout push swaps the agents block to the clone when
-  any value differs from Herdr's, and back when none does. Presets: Comfortable 30/13/16/30,
-  Compact 24/12/14/24, Dense 20/11.5/12/20 (row/text/icon/header). Sub-agent rows follow at row
+  any value differs from Herdr's, and back when none does. Presets (row/text/icon/header, then
+  header/time/title/badge text): Comfortable 30/13/16/30, 11/11/11.5/10.5 (Herdr's); Compact
+  24/12/14/24, 10.5/10.5/11/10; Dense 20/11.5/12/20, 10/10/10.5/9.5. The badge's height is its
+  text plus 7.5, the "!" box its text plus 3.5. Sub-agent rows follow at row
   minus 4, text minus 0.5, icon minus 2. Saved with the theme like glass.
 - **Image background**: Herdr gives mods no file dialog, so **Choose…** runs
   `osascript -e 'POSIX path of (choose file of type {"public.image"} ...)'` (cancel returns nothing).

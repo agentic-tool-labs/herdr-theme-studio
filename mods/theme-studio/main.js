@@ -36,11 +36,12 @@ const LIVE_LOOK = { font: "font_family", font_size: "font_size", ui_font: "ui_fo
 const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"], ["agents", "Agents"]];
 // The agents list: density presets (Comfortable is Herdr's own) and the sliders' ranges.
 const AGENT_PRESETS = {
-  Comfortable: { row: 30, text: 13, icon: 16, header: 30 },
-  Compact: { row: 24, text: 12, icon: 14, header: 24 },
-  Dense: { row: 20, text: 11.5, icon: 12, header: 20 },
+  Comfortable: { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5 },
+  Compact: { row: 24, text: 12, icon: 14, header: 24, headerText: 10.5, timeText: 10.5, titleText: 11, badgeText: 10 },
+  Dense: { row: 20, text: 11.5, icon: 12, header: 20, headerText: 10, timeText: 10, titleText: 10.5, badgeText: 9.5 },
 };
-const AGENT_SLIDERS = { row: [18, 34, 1], text: [10.5, 14, 0.5], icon: [10, 18, 1], header: [16, 34, 1] };
+const AGENT_SLIDERS = { row: [18, 34, 1], text: [10.5, 14, 0.5], icon: [10, 18, 1], header: [16, 34, 1],
+  headerText: [8, 14, 0.5], timeText: [8, 14, 0.5], titleText: [8, 14, 0.5], badgeText: [8, 14, 0.5] };
 
 const GROUPS = [
   ["Surfaces", ["background", "canvas", "chrome", "surface", "popover", "raised", "hover", "selected"]],
@@ -1304,9 +1305,14 @@ export default class ThemeStudio extends View {
         "Comfortable is Herdr's own list. Fine-tune with the sliders."))
       .child(this.section("Sizes", t, v_flex().gap(12)
         .child(this.slider(t, this.agentSliders.row, "ag-row", "Row height", px(a.row)))
-        .child(this.slider(t, this.agentSliders.text, "ag-text", "Text size", px(a.text)))
+        .child(this.slider(t, this.agentSliders.text, "ag-text", "Agent name text", px(a.text)))
         .child(this.slider(t, this.agentSliders.icon, "ag-icon", "Icon size", px(a.icon)))
         .child(this.slider(t, this.agentSliders.header, "ag-header", "Group header height", px(a.header)))))
+      .child(this.section("Text sizes", t, v_flex().gap(12)
+        .child(this.slider(t, this.agentSliders.headerText, "ag-headerText", "Group headers", px(a.headerText)))
+        .child(this.slider(t, this.agentSliders.timeText, "ag-timeText", "Time since", px(a.timeText)))
+        .child(this.slider(t, this.agentSliders.titleText, "ag-titleText", "\"Agents\" title", px(a.titleText)))
+        .child(this.slider(t, this.agentSliders.badgeText, "ag-badgeText", "\"Needs you\" badge", px(a.badgeText)))))
       .child(this.section("Show", t, v_flex().gap(8)
         .child(this.checkbox("ag-time", "Time since (3m, 12m)", a.time, t, (_e, cx) => this.stageAgents({ time: !a.time }, cx)))
         .child(this.checkbox("ag-headers", "Group headers (Working, Pinned, …)", a.headers, t, (_e, cx) => this.stageAgents({ headers: !a.headers }, cx)))
@@ -1320,18 +1326,19 @@ export default class ThemeStudio extends View {
   agentsPreview(t, a) {
     const rows = [["herdr-app-theming", "3m", "working"], ["agent-tools-private", "12m", "blocked"], ["notes", "1h", "idle"]];
     const status = (st) => st === "working" ? div().size(10).flex_none().rounded(5).border_2().border_color(t.working)
-      : st === "blocked" ? (a.badge ? div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
-        : div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!"))
+      : st === "blocked" ? (a.badge ? div().flex_none().px(6).h(a.badgeText + 7.5).rounded(5).bg(t.blocked + "26").text_size(a.badgeText).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
+        : div().size(a.badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + "26").text_size(a.badgeText).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!"))
       : div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle || t.dim);
     const row = ([name, when, st], i) => h_flex().id(`agm-${i}`).px(8).h(a.row).flex_none().rounded(8).items_center().gap(a.row < 26 ? 6 : 9).text_size(a.text)
       .when(i === 0, (el) => el.bg(t.selected))
       .when(a.icons, (el) => el.child(div().size(a.icon).flex_none().rounded(4).bg(t.accent)))
       .child(div().flex_1().min_w(0).truncate().text_color(st === "idle" ? t.muted : t.foreground).child(name))
-      .when(a.time, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(when)))
+      .when(a.time, (el) => el.child(div().flex_none().text_size(a.timeText).text_color(t.dim).child(when)))
       .child(status(st));
-    const header = (label, n) => h_flex().px(8).pt(a.header < 26 ? 4 : 8).h(a.header).flex_none().gap(6).items_center().text_size(11).font_medium().text_color(t.dim)
+    const header = (label, n) => h_flex().px(8).pt(a.header < 26 ? 4 : 8).h(a.header).flex_none().gap(6).items_center().text_size(a.headerText).font_medium().text_color(t.dim)
       .child(label).child(div().text_color(t.dim).child(String(n)));
     return v_flex().w(240).p(8).rounded(8).bg(t.chrome).border_1().border_color(t.border).self_center()
+      .child(div().px(8).pt(2).pb(4).text_size(a.titleText).font_medium().text_color(t.dim).child("Agents"))
       .when(a.headers, (el) => el.child(header("Working", 2)))
       .child(row(rows[0], 0)).child(row(rows[1], 1))
       .when(a.headers, (el) => el.child(header("Idle", 1)))
