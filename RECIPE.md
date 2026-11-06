@@ -168,7 +168,11 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply` (Save in the editor), `cancel`,
   `glass=Solid|Tinted|Frosted`, `bg=`, `opacity|chrome|radius|gap|angle=<n>`, `behind=`
   (the glass ones stage), `button=on|off`, `copy-layout`, `import=<name>` (clipboard),
-  `import-file=<path>`, `revert`.
+  `import-file=<path>`, `image=<path>` (none: the picker), `revert`.
+- **Image background**: Herdr gives mods no file dialog, so **Choose…** runs
+  `osascript -e 'POSIX path of (choose file of type {"public.image"} ...)'` (cancel returns nothing).
+  The row also takes a dropped file. Layouts read pictures only inside Herdr's folder, so a
+  picture from elsewhere is copied into `backgrounds/` (a time prefix when the name is taken).
 
 ## Built from
 

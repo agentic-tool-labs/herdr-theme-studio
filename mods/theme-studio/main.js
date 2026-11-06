@@ -102,7 +102,7 @@ export default class ThemeStudio extends View {
     this.importText = TextareaState.new({ placeholder: "Paste or drop an iTerm2, Ghostty, kitty, Alacritty or Herdr theme", rows: 7 });
     this.importName = InputState.new({ placeholder: "Theme name" });
     this.imagePath = InputState.new({ placeholder: "backgrounds/my-picture.jpg (in ~/.config/herdr-app)" });
-    this.imagePath.on("submit", (_e, cx) => this.stageGlass({ bg: "image", image: this.imagePath.value().trim() }, cx));
+    this.imagePath.on("submit", (_e, cx) => this.useImage(this.imagePath.value().trim(), cx));
     this.copyName = InputState.new({ placeholder: "Name for the copy" });
     this.copyName.on("submit", (_e, cx) => this.copyTheme(this.ask && this.ask.from, this.copyName.value(), cx, this.ask && this.ask.edit));
 
@@ -191,6 +191,8 @@ export default class ThemeStudio extends View {
     else if (verb === "import") this.importTheme(cx, cx.read_from_clipboard() || "", arg);
     else if (verb === "import-file") this.importFile(arg, cx);
     else if (verb === "behind") this.stageGlass({ behind: arg }, cx);
+    else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
+    else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
     else if (verb === "button") this.setButton(arg !== "off", cx);
     else if (verb !== "focus") this.say(`Unknown command ${c}`, "error", cx);
   }
@@ -591,6 +593,39 @@ export default class ThemeStudio extends View {
         if (rel && gen === this.bloomGen) { this.glassDraft.bloom = rel; cx.notify(); }
       });
     });
+  }
+
+  // Herdr has no file dialog for mods; macOS's own comes through osascript. Cancel returns nothing.
+  chooseImage(cx) {
+    cx.spawn(async (cx) => {
+      const r = await exec("osascript", ["-e", 'POSIX path of (choose file of type {"public.image"} with prompt "A picture for behind the panes")']).catch(() => null);
+      const path = r && r.code === 0 ? r.stdout.trim() : "";
+      if (path) this.useImage(path, cx);
+    });
+  }
+
+  // Stages a picture as the background. A path outside Herdr's folder is copied into backgrounds/,
+  // since layouts only read pictures there.
+  useImage(path, cx) {
+    path = (path || "").replace(/^~(?=\/)/, home());
+    if (!path) return;
+    cx.spawn((cx) => this.guard(cx, "Adding the picture", async () => {
+      let rel = path;
+      if (path.startsWith("/")) {
+        if (path.startsWith(`${HOME}/`)) rel = path.slice(HOME.length + 1);
+        else {
+          await fs.mkdir(`${HOME}/backgrounds`, { recursive: true }).catch(() => {});
+          const base = path.split("/").pop(), taken = await fs.exists(`${HOME}/backgrounds/${base}`);
+          rel = `backgrounds/${taken ? `${Date.now()}-${base}` : base}`;
+          const r = await exec("cp", [path, `${HOME}/${rel}`]);
+          if (r.code !== 0) throw new Error(`Couldn't copy the picture: ${(r.stderr || "").trim()}`);
+        }
+      }
+      if (!(await fs.exists(`${HOME}/${rel}`))) throw new Error(`No picture at ${rel}`);
+      this.imagePath.set_value(rel);
+      this.stageGlass({ bg: "image", image: rel }, cx);
+      this.say(`Picture ready: ${rel}. Save to keep it.`, "success", cx);
+    }));
   }
 
   makeCopy(cx, tab = "glass") {
@@ -1161,9 +1196,12 @@ export default class ThemeStudio extends View {
         .when(g.bg === "frost", (el) => el.child(h_flex().gap(8).items_center()
           .child(div().flex_1().text_size(11.5).text_color(t.dim).line_height("17px").child("Your desktop picture, blurred. It shows the wallpaper only, not the windows behind Herdr, and it doesn't move with the window. Rebuilt when the wallpaper changes and you open the Studio."))
           .child(this.button("frost-now", "Rebuild", t, (_e, cx) => cx.spawn((cx) => this.guard(cx, "Blurring wallpaper", async () => { await this.refreshFrost(cx, true); this.pushGlass(); this.say("Frosted wallpaper rebuilt", "success", cx); }))))))
-        .when(g.bg === "image", (el) => el.child(h_flex().gap(6)
-          .child(Input.new(this.imagePath).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-          .child(this.button("img-set", "Use", t, (_e, cx) => this.stageGlass({ bg: "image", image: this.imagePath.value().trim() }, cx), true))))))
+        .when(g.bg === "image", (el) => el.child(v_flex().gap(6)
+          .child(h_flex().id("img-drop").gap(6).on_drop((e, cx) => this.useImage(e.paths && e.paths[0], cx))
+            .child(this.button("img-choose", "Choose…", t, (_e, cx) => this.chooseImage(cx), true))
+            .child(Input.new(this.imagePath).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+            .child(this.button("img-set", "Use", t, (_e, cx) => this.useImage(this.imagePath.value().trim(), cx))))
+          .child(div().text_size(11.5).text_color(t.dim).line_height("17px").child("Choose a picture, drop one here, or type a path. Herdr only reads pictures in its own folder, so one from elsewhere is copied into backgrounds/ first."))))))
       .child(this.section("Glass surfaces", t, v_flex().gap(12)
         .child(slider("chrome", "Sidebar and bar opacity"))
         .child(slider("opacity", "Terminal opacity")),
