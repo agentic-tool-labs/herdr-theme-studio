@@ -1,4 +1,6 @@
-# Theme Studio, a Herdr mod
+<p align="center"><img src="docs/herdr-ram.svg" width="620" alt="The Herdr ram, drawn in colored ASCII"></p>
+
+<h1 align="center">Herdr Desktop: Theme Studio</h1>
 
 One window for the [Herdr](https://herdr.dev) app's whole look: themes, every color token,
 fonts, glass and pane frames. Changes show in the real window as you make them, because the
@@ -228,7 +230,7 @@ mods/theme-studio/
   bloom.jxa.js     bloom background render (base color plus three glows)
   palette.svg      sidebar icon
   presets/         12 theme files + SOURCES.md
-docs/              design page source and build plan
+docs/              design page source, build plan, screenshots, the ASCII ram (herdr-ram.svg)
 RECIPE.md          the brief to build it from scratch
 keys.json          the key it expects
 ```
