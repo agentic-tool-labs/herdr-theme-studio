@@ -222,13 +222,12 @@ function studioRadius() {
 }
 
 export const GLASS_DEFAULT = { bg: "theme", angle: 165, from: "accent", to: "canvas", image: "", frost: "", opacity: 1, chrome: 1, radius: 6, gap: 6, margin: 8, behind: "",
-  tintChrome: "", tintPane: "", bloom: "", bloomBase: "canvas", glowA: "accent", glowB: "ansi5", glowC: "ansi6", glowIntensity: 100 };
-/** Glass fields a layout tree can't give back (tints and bloom colors), kept beside it in shared state. */
-export const GLASS_EXTRA = ["tintChrome", "tintPane", "bloomBase", "glowA", "glowB", "glowC", "glowIntensity"];
+  bloom: "", bloomBase: "canvas", glowA: "accent", glowB: "ansi5", glowC: "ansi6", glowIntensity: 100 };
+/** Glass fields a layout tree can't give back (the bloom colors), kept beside it in shared state. */
+export const GLASS_EXTRA = ["bloomBase", "glowA", "glowB", "glowC", "glowIntensity"];
 
 /** Copy of a layout tree with the glass look applied to its root and its `{tab:"active"}` blocks.
- *  `base` holds the opaque `chrome` and `background` glass colors (hex: the tints, or the theme's own),
- *  which get the alpha. A tint shows even at opacity 1, so a tinted pane is see-through too.
+ *  `base` holds the theme's opaque `chrome` and `background` colors as hex, which get the alpha.
  *  See-through terminals: the terminal's own background goes fully transparent and the pane card
  *  carries the translucency instead. Herdr clips the card to its radius but paints a terminal's
  *  background square, so this is what keeps rounded corners clean. */
@@ -240,10 +239,10 @@ export function applyGlass(tree, g, base) {
     g.bg === "bloom" && g.bloom ? { image: g.bloom, fit: "cover" } :
     g.bg === "frost" && g.frost ? { image: g.frost, fit: "cover" } :
     g.bg === "image" && g.image ? { image: g.image, fit: "cover" } : "canvas";
-  const see = g.opacity < 1 || Boolean(g.tintPane);
+  const see = g.opacity < 1;
   if (see) root.terminal_opacity = 0; else delete root.terminal_opacity;
   const colors = { ...(root.colors || {}) };
-  if ((g.chrome < 1 || g.tintChrome) && chrome) colors.chrome = withAlpha(chrome, g.chrome); else delete colors.chrome;
+  if (g.chrome < 1 && chrome) colors.chrome = withAlpha(chrome, g.chrome); else delete colors.chrome;
   if (Object.keys(colors).length) root.colors = colors; else delete root.colors;
   // Herdr doesn't paint a tab block's own background, so "behind" goes on the node holding it.
   (function walk(n, parent) {

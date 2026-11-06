@@ -61,7 +61,7 @@ const presetColors = (f) => ({
   ...Object.fromEntries(f.ansi.map((c, i) => [`ansi${i}`, c])), ...(f.colors || {}),
 });
 // Glass colors that can hold a fixed hex. Applying a new theme puts these back to the theme's own.
-const GLASS_COLORS = ["from", "to", "tintChrome", "tintPane", "bloomBase", "glowA", "glowB", "glowC", "behind"];
+const GLASS_COLORS = ["from", "to", "bloomBase", "glowA", "glowB", "glowC", "behind"];
 const MIN_SIZE = 8, MAX_SIZE = 32;
 const CONTRASTS = [1, 1.6, 3, 4.5, 7];
 
@@ -136,7 +136,7 @@ export default class ThemeStudio extends View {
       this.glassTheme = now;
       if (!this.personal()) return;
       if (this.glass.bg === "bloom") cx.spawn(async () => { this.glass.bloom = await this.renderBloom(this.glass).catch(() => this.glass.bloom); this.pushGlass(); });
-      else if (this.glass.chrome < 1 || this.glass.opacity < 1 || this.glass.tintChrome || this.glass.tintPane) this.pushGlass();
+      else if (this.glass.chrome < 1 || this.glass.opacity < 1) this.pushGlass();
     });
     // Making a layout copy reopens the Studio on the copy; finish by adding the palette icon.
     if (shared(K.addButton) && this.personal()) { setShared(K.addButton, null); this.setButton(true, cx); }
@@ -371,13 +371,13 @@ export default class ThemeStudio extends View {
   // A glass color field as hex: a token through the theme, "" through its default.
   glassHex(key, g = this.glassShown(), c = this.themeColors()) {
     const v = g[key] || GLASS_DEFAULT[key];
-    const fallback = { tintChrome: c.chrome, tintPane: c.background, behind: c.canvas }[key] || c.canvas;
+    const fallback = c.canvas;
     return normHex(v ? c[v] || v : fallback) || "#000000";
   }
 
-  // The opaque glass colors for applyGlass: the tints, or the theme's own chrome and terminal colors.
+  // The opaque glass colors for applyGlass: the theme's own chrome and terminal colors.
   baseColors(g = this.glass, c = this.themeColors()) {
-    return { chrome: this.glassHex("tintChrome", g, c).slice(0, 7), background: this.glassHex("tintPane", g, c).slice(0, 7) };
+    return { chrome: normHex(c.chrome).slice(0, 7), background: normHex(c.background).slice(0, 7) };
   }
 
   changes() {
@@ -504,7 +504,9 @@ export default class ThemeStudio extends View {
   }
 
   pushGlass() {
-    run("layout.set", { layout: applyGlass(layout(), this.glass, this.baseColors()) });
+    // The tree mods get back can hold an older theme than the one picked, so a push carries the shown pick.
+    const s = settings(), tree = s.theme_dark && s.theme_light ? { ...layout(), theme: { light: s.theme_light, dark: s.theme_dark } } : layout();
+    run("layout.set", { layout: applyGlass(tree, this.glass, this.baseColors()) });
   }
 
   // Herdr's pane header paints square corners inside the rounded card. A clone of it, patched to round
@@ -1002,9 +1004,8 @@ export default class ThemeStudio extends View {
           .child(this.button("img-set", "Use", t, (_e, cx) => this.stageGlass({ bg: "image", image: this.imagePath.value().trim() }, cx), true))))))
       .child(this.section("Glass surfaces", t, v_flex().gap(12)
         .child(slider("chrome", "Sidebar and bar opacity"))
-        .child(slider("opacity", "Terminal opacity"))
-        .child(colors([["tintChrome", "Sidebar glass"], ["tintPane", "Terminal glass"]], "The glass's own color. Clear the hex box to go back to the theme's chrome or terminal color.")),
-        "Below 1, the window background shows through. A busy background needs higher opacity to keep text readable. A glass color shows even at opacity 1."))
+        .child(slider("opacity", "Terminal opacity")),
+        "Below 1, the window background shows through. A busy background needs higher opacity to keep text readable. The glass takes the theme's chrome and terminal colors: change those on the Colors tab."))
       .child(this.section("Pane frames", t, v_flex().gap(12).child(slider("radius", "Corner radius")).child(slider("margin", "Margin around panes")).child(slider("gap", "Gap between panes")),
         "The margin frames the pane area, even with one pane. The gap shows between split panes and beside the side panel. Their color is on the Colors tab, under Behind panes."))
       .child(this.section("True window blur", t, div().text_size(11.5).text_color(t.dim).line_height("17px")
@@ -1026,7 +1027,7 @@ export default class ThemeStudio extends View {
   windowPreview(t) {
     const c = { ...t, ...this.themeColors() }, g = this.glassShown(), base = this.baseColors(g, c);
     const behind = g.behind ? this.glassHex("behind", g, c) : null;
-    const see = g.opacity < 1 || Boolean(g.tintPane);
+    const see = g.opacity < 1;
     const chrome = withAlpha(base.chrome, g.chrome), term = see ? withAlpha(base.background, g.opacity) : c.background;
     // ponytail: the gradient snaps to the nearest of four directions; Herdr draws the exact angle.
     const a = ((g.angle % 360) + 360) % 360, across = (a > 45 && a < 135) || (a > 225 && a < 315);

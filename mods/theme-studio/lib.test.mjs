@@ -192,7 +192,7 @@ assert.ok(contrast(liftContrast("#dddddd", "#ffffff", 3), "#ffffff") >= 3);
 assert.equal(liftContrast("#333333", "#111111", 1), "#333333");
 assert.equal(breakLigatures("a -> b != c"), "a -\u200c> b !\u200c= c");
 
-// glass: chosen gradient colors, bloom picture, tinted panes
+// glass: chosen gradient colors, bloom picture
 const gtree = { id: "root", type: "row", children: [{ id: "work", type: "column", children: [{ id: "main", type: "block", content: { tab: "active", pane: {} } }] }] };
 const grad = applyGlass(gtree, { ...GLASS_DEFAULT, bg: "gradient", from: "#112233", to: "ansi4", angle: 90 }, { chrome: "#000000", background: "#101010" });
 assert.deepEqual(grad.background, { gradient: ["#112233", "ansi4"], angle: 90 });
@@ -200,10 +200,6 @@ assert.equal(readGlass(grad).from, "#112233");
 const bl = applyGlass(gtree, { ...GLASS_DEFAULT, bg: "bloom", bloom: "backgrounds/studio-bloom-1.jpg" }, { chrome: "#000000", background: "#101010" });
 assert.deepEqual(bl.background, { image: "backgrounds/studio-bloom-1.jpg", fit: "cover" });
 assert.equal(readGlass(bl).bg, "bloom");
-const tint = applyGlass(gtree, { ...GLASS_DEFAULT, tintPane: "#336699", tintChrome: "#223344" }, { chrome: "#223344", background: "#336699" });
-assert.equal(tint.terminal_opacity, 0, "a tinted pane needs the terminal see-through");
-assert.equal(tint.children[0].children[0].content.pane.background, "#336699");
-assert.equal(tint.colors.chrome, "#223344");
 const spec = bloomSpec("#000000", ["#ff0000", "#00ff00", "#0000ff80"], 200);
 assert.equal(spec.glows.length, 3); assert.equal(spec.glows[2].c, "#0000ff"); assert.equal(spec.glows[0].a, 1);
 

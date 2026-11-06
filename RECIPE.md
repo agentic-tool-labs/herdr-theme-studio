@@ -69,9 +69,9 @@ A window 520×720 px (`mod.json` overlay, `kind: "window"`), on the `popover` ba
     pinned, then Presets (Solid, Tinted, Frosted); Window background pills (Theme, Gradient,
     Bloom, Frosted wallpaper, Image) with the matching controls under them: color chips From
     and To plus the angle slider; chips Base, Glow 1–3 plus Glow strength 0–200%; Rebuild;
-    the image path. Glass surfaces: Sidebar and bar opacity 0.2–1, Terminal opacity 0.3–1,
-    and chips Sidebar glass and Terminal glass (the glass's own tint, default the theme's
-    chrome and terminal colors). Pane frames: Corner radius 0–20, Margin around panes 0–32, Gap between panes 0–24, with a note that
+    the image path. Glass surfaces: Sidebar and bar opacity 0.2–1, Terminal opacity 0.3–1;
+    their color is always the theme's chrome and terminal color (no separate tint: one set
+    quietly covered every theme). Pane frames: Corner radius 0–20, Margin around panes 0–32, Gap between panes 0–24, with a note that
     the gap's color is on Colors. A chip is a 28px pill with a 14px color dot; the selected
     one opens the color editor under its row. Sliders are a 4px `input` groove, `accent`
     fill, a 24×16 `foreground` pill thumb ringed in `accent`, centered on the groove
@@ -99,7 +99,7 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
 - **Picking a theme** stages it (the mock window shows it; a preset's panel colors are guessed
   from its background until Herdr derives them). Apply runs `app.theme {name}`, which sets the
   half that matches its lightness; a preset is first written to `themes/<name>.json` and the
-  Studio waits for `themes()` to list it. Glass colors set to a fixed hex (tints, glows,
+  Studio waits for `themes()` to list it. Glass colors set to a fixed hex (glows,
   gradient ends, behind panes) go back to their theme-following defaults in the same Apply, and
   translucent glass is pushed again: its colors are hexes of the theme's. Staging a theme drops
   staged color edits, which were for the old theme.
@@ -121,10 +121,9 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   every herdr-core child process so open panes change at once. The Studio never edits
   `~/.zshrc`; it offers the `source` line to copy and checks whether it's there. The mock window
   draws the cursor after the last prompt.
-- **Glass** colors (gradient From/To, tints, bloom base and glows) are tokens or hex. Tints
-  and bloom colors can't be read back from the tree, so they're kept per layout in shared
-  `theme-studio.glass-extra`. A tint makes the pane see-through (`terminal_opacity: 0`) even
-  at opacity 1.
+- **Glass** colors (gradient From/To, bloom base and glows) are tokens or hex. Bloom colors
+  can't be read back from the tree, so they're kept per layout in shared
+  `theme-studio.glass-extra`.
 - **Bloom**: Herdr paints only a color, a two-color linear gradient or a picture behind panes,
   and a mod can't draw behind them. So `bloom.jxa.js` renders the base color and three radial
   glows (Core Image, blurred 90px) into `backgrounds/studio-bloom-<time>.jpg`, 250 ms after the
