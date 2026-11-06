@@ -41,7 +41,11 @@ const AGENT_PRESETS = {
   Dense: { row: 20, text: 11.5, icon: 12, header: 20, headerText: 10, timeText: 10, titleText: 10.5, badgeText: 9.5 },
 };
 const AGENT_SLIDERS = { row: [18, 34, 1], text: [10.5, 14, 0.5], icon: [10, 18, 1], header: [16, 34, 1],
-  headerText: [8, 14, 0.5], timeText: [8, 14, 0.5], titleText: [8, 14, 0.5], badgeText: [8, 14, 0.5] };
+  headerText: [8, 14, 0.5], timeText: [8, 14, 0.5], titleText: [8, 14, 0.5], badgeText: [8, 14, 0.5],
+  detailText: [8, 14, 0.5], radius: [0, 14, 1], pad: [2, 14, 1], space: [0, 8, 1] };
+// The agent cards' colors: [key, label, the theme color used while unset ("" none)].
+const AGENT_COLORS = [["nameColor", "Name", "foreground"], ["detailColor", "Detail", "dim"], ["timeColor", "Time", "dim"],
+  ["cardColor", "Card", ""], ["borderColor", "Border", ""], ["selectedColor", "Selected", "selected"], ["hoverColor", "Hover", "hover"]];
 
 const GROUPS = [
   ["Surfaces", ["background", "canvas", "chrome", "surface", "popover", "raised", "hover", "selected"]],
@@ -209,7 +213,8 @@ export default class ThemeStudio extends View {
     else if (verb === "agents" && AGENT_PRESETS[arg]) this.stageAgents({ ...AGENT_PRESETS[arg] }, cx);
     else if (verb.startsWith("agents-") && verb.slice(7) in AGENTS_DEFAULT) { const k = verb.slice(7); const d = AGENTS_DEFAULT[k]; this.stageAgents({ [k]: typeof d === "boolean" ? arg !== "off" : typeof d === "string" ? arg : Number(arg) }, cx); }
     else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
-    else if (verb === "button") this.setButton(arg !== "off", cx);
+    // On Herdr's own layout, `on` makes the person's copy first; the copy reopens the Studio and adds the icon.
+    else if (verb === "button") { if (arg !== "off" && !this.personal()) this.makeCopy(cx, "colors"); else this.setButton(arg !== "off", cx); }
     else if (verb !== "focus") this.say(`Unknown command ${c}`, "error", cx);
   }
 
@@ -442,7 +447,13 @@ export default class ThemeStudio extends View {
     for (const [k, v] of Object.entries(patch)) if (now[k] === v) delete this.agentsDraft[k]; else this.agentsDraft[k] = v;
     const a = this.agentsShown();
     for (const [k, sl] of Object.entries(this.agentSliders)) if (sl.value() !== a[k]) sl.set_value(a[k]);
+    this.syncControls();
     cx.notify();
+  }
+  // An agent card color as shown: the one set, else the theme's.
+  agentHex(key, a = this.agentsShown(), c = this.themeColors()) {
+    const tok = (AGENT_COLORS.find(([k]) => k === key) || [])[2];
+    return a[key] || (tok && normHex(c[tok] || "")) || "#00000000";
   }
 
   cursorShown() { return { shape: "block", blink: false, ...(shared(K.cursor) || {}), ...this.cursorDraft }; }
@@ -486,6 +497,7 @@ export default class ThemeStudio extends View {
   targetHex(id = this.pickTarget) {
     if (!id) return null;
     const [kind, key] = id.split(":");
+    if (kind === "agent") return this.agentHex(key);
     return kind === "tok" ? normHex(this.themeColors()[key] || "") || "#000000" : this.glassHex(key);
   }
 
@@ -495,12 +507,14 @@ export default class ThemeStudio extends View {
     if (!id) return;
     const [kind, key] = id.split(":");
     if (fromPicker) { this.pickFor = `${id}|${hex}`; this.hex.set_value(hex); }
-    if (kind === "tok") this.stageColor(key, hex, cx); else this.stageGlass({ [key]: hex }, cx);
+    if (kind === "tok") this.stageColor(key, hex, cx);
+    else if (kind === "agent") this.stageAgents({ [key]: hex }, cx);
+    else this.stageGlass({ [key]: hex }, cx);
   }
 
   stageHex(value, cx) {
     const [kind] = (this.pickTarget || "").split(":");
-    if (kind === "glass" && value.trim() === "") return this.stageTarget("", cx); // back to the default
+    if ((kind === "glass" || kind === "agent") && value.trim() === "") return this.stageTarget("", cx); // back to the default
     const hex = normHex(value);
     if (!hex) return this.say(`"${value}" isn't a color: use #rrggbb or #rrggbbaa`, "error", cx);
     this.stageTarget(hex, cx);
@@ -1304,7 +1318,7 @@ export default class ThemeStudio extends View {
         .child(div().text_color(t.muted).line_height("19px").child(`Herdr's own layouts (${shared("layout")}) can't swap their agents list. A copy can: it shows the Studio's version of the list, a copy of Herdr's with your sizes. The Studio closes for a moment while Herdr switches.`))
         .child(h_flex().child(this.button("copy", `Make my copy of ${shared("layout")}`, t, (_e, cx) => this.makeCopy(cx, "agents"), true)));
     }
-    const a = this.agentsShown();
+    const a = this.agentsShown(), sel = this.pickTarget;
     const px = (v) => `${v}px`;
     const preset = Object.entries(AGENT_PRESETS).find(([, p]) => Object.keys(p).every((k) => p[k] === a[k]));
     const body = v_flex().gap(16)
@@ -1314,6 +1328,20 @@ export default class ThemeStudio extends View {
       .child(this.section("Row layout", t, h_flex().flex_wrap().gap(6)
         .children([["one", "One line"], ["two", "Two lines"], ["auto", "Two lines when needed"]].map(([v, label]) => this.pill(`agl-${v}`, label, a.lines === v, t, (_e, cx) => this.stageAgents({ lines: v }, cx)))),
         "Two lines keep the name on top and put the detail, time and status under it. \"When needed\" does that only for a name too long to sit beside them, so it follows the sidebar's width."))
+      .child(this.section("Row title", t, h_flex().flex_wrap().gap(6)
+        .children([["space", "Workspace"], ["session", "Session"]].map(([v, label]) => this.pill(`agd-${v}`, label, a.lead === v, t, (_e, cx) => this.stageAgents({ lead: v }, cx)))),
+        "What leads a row when it names both: the workspace or the session's title. Under a workspace's own header a row shows only the session."))
+      .child(this.section("Cards", t, v_flex().gap(12)
+        .child(h_flex().flex_wrap().gap(6).children(AGENT_COLORS.map(([k, label]) => this.chip(t, `agc-${k}`, label, this.agentHex(k, a), sel === `agent:${k}`, (_e, cx) => this.selectTarget(`agent:${k}`, cx)))))
+        .when(AGENT_COLORS.some(([k]) => sel === `agent:${k}`), (el) => el.child(this.colorEditor(t, "Clear the hex box to go back to the theme's color. Card and Border are off until you pick one.")))
+        .child(h_flex().flex_wrap().gap(6).items_center().child(div().w(84).text_size(12).text_color(t.muted).child("Status"))
+          .children([["left", "Left"], ["right", "Right"]].map(([v, label]) => this.pill(`ags-${v}`, label, a.statusSide === v, t, (_e, cx) => this.stageAgents({ statusSide: v }, cx)))))
+        .child(h_flex().flex_wrap().gap(6).items_center().child(div().w(84).text_size(12).text_color(t.muted).child("Name weight"))
+          .children([["normal", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]].map(([v, label]) => this.pill(`agw-${v}`, label, a.weight === v, t, (_e, cx) => this.stageAgents({ weight: v }, cx)))))
+        .child(this.slider(t, this.agentSliders.radius, "ag-radius", "Corner radius", px(a.radius)))
+        .child(this.slider(t, this.agentSliders.pad, "ag-pad", "Side padding", px(a.pad)))
+        .child(this.slider(t, this.agentSliders.space, "ag-space", "Space between cards", px(a.space))),
+        "A color you pick stays when you change themes; the ones left unset follow the theme. Pick a Card color, a Border or some space between cards to make each agent its own card. Status on the left is the small form (spinner, dot, !), in front of the icon."))
       .child(this.section("Sizes", t, v_flex().gap(12)
         .child(this.slider(t, this.agentSliders.row, "ag-row", "Row height", px(a.row)))
         .child(this.slider(t, this.agentSliders.text, "ag-text", "Agent name text", px(a.text)))
@@ -1322,6 +1350,7 @@ export default class ThemeStudio extends View {
       .child(this.section("Text sizes", t, v_flex().gap(12)
         .child(this.slider(t, this.agentSliders.headerText, "ag-headerText", "Group headers", px(a.headerText)))
         .child(this.slider(t, this.agentSliders.timeText, "ag-timeText", "Time since", px(a.timeText)))
+        .child(this.slider(t, this.agentSliders.detailText, "ag-detailText", "Second line detail (two-line rows)", px(a.detailText)))
         .child(this.slider(t, this.agentSliders.titleText, "ag-titleText", "\"Agents\" title", px(a.titleText)))
         .child(this.slider(t, this.agentSliders.badgeText, "ag-badgeText", "\"Needs you\" badge", px(a.badgeText)))))
       .child(this.section("Show", t, v_flex().gap(8)
@@ -1338,31 +1367,42 @@ export default class ThemeStudio extends View {
     const rows = [["herdr-app-theming", "3m", "working", "Herdr theming plugin design"], ["agent-tools-private", "12m", "blocked", "ah2-fix: implementor"], ["notes", "1h", "idle", ""]];
     // The same rule as the clone's "auto", for this 240px mock.
     const two = (name, more) => a.lines === "two" || (a.lines === "auto" && (name.length + (more ? more.length + 3 : 0)) * a.text * 0.56 > 240 - 32 - (a.icons ? a.icon + 9 : 0) - (a.time ? 30 : 0) - 24);
-    const status = (st) => st === "working" ? div().size(10).flex_none().rounded(5).border_2().border_color(t.working)
-      : st === "blocked" ? (a.badge ? div().flex_none().px(6).h(a.badgeText + 7.5).rounded(5).bg(t.blocked + "26").text_size(a.badgeText).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
+    const status = (st, compact = !a.badge) => st === "working" ? div().size(10).flex_none().rounded(5).border_2().border_color(t.working)
+      : st === "blocked" ? (!compact ? div().flex_none().px(6).h(a.badgeText + 7.5).rounded(5).bg(t.blocked + "26").text_size(a.badgeText).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
         : div().size(a.badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + "26").text_size(a.badgeText).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!"))
       : div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle || t.dim);
     const gap = a.row < 26 ? 6 : 9, pic = () => div().size(a.icon).flex_none().rounded(4).bg(t.accent);
-    const name = (text, st) => div().flex_1().min_w(0).truncate().text_color(st === "idle" ? t.muted : t.foreground).child(text);
-    const time = (when) => div().flex_none().text_size(a.timeText).text_color(t.dim).child(when);
-    const row = ([text, when, st, more], i) => two(text, more)
-      ? v_flex().id(`agm-${i}`).px(8).py(3).flex_none().rounded(8).gap(1).text_size(a.text).when(i === 0, (el) => el.bg(t.selected))
-        .child(h_flex().h(Math.max(16, a.row - 6)).items_center().gap(gap).when(a.icons, (el) => el.child(pic())).child(name(text, st)))
-        .child(h_flex().min_h(18).items_center().gap(6).pl(a.icons ? a.icon + gap : 0)
-          .child(div().flex_1().min_w(0).truncate().text_size(a.timeText).text_color(t.dim).child(more))
-          .when(a.time, (el) => el.child(time(when))).child(status(st)))
-      : h_flex().id(`agm-${i}`).px(8).h(a.row).flex_none().rounded(8).items_center().gap(gap).text_size(a.text)
-        .when(i === 0, (el) => el.bg(t.selected))
+    const col = (k, fallback) => a[k] || fallback;
+    const weight = (el) => a.weight === "bold" ? el.font_bold() : a.weight === "semibold" ? el.font_semibold() : a.weight === "medium" ? el.font_medium() : el;
+    const card = (el, i) => el.px(a.pad).rounded(a.radius).flex_none().text_size(a.text)
+      .when(Boolean(a.cardColor), (e) => e.bg(a.cardColor)).when(Boolean(a.borderColor), (e) => e.border_1().border_color(a.borderColor))
+      .when(i === 0, (e) => e.bg(col("selectedColor", t.selected)));
+    const name = (text, st, more) => h_flex().flex_1().min_w(0).gap(5).items_center()
+      .child(div().min_w(0).truncate().text_color(col("nameColor", st === "idle" ? t.muted : t.foreground)).when(true, weight).child(text))
+      .when(Boolean(more), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(col("detailColor", t.dim)).child(`· ${more}`)));
+    const time = (when) => div().flex_none().text_size(a.timeText).text_color(col("timeColor", t.dim)).child(when);
+    const left = a.statusSide === "left", lead = (st) => h_flex().w(16).flex_none().items_center().justify_center().child(status(st, true));
+    const row = ([space, when, st, detail], i) => {
+      const [text, more] = a.lead === "session" && detail ? [detail, space] : [space, detail];
+      return two(text, more)
+      ? card(v_flex().id(`agm-${i}`).py(3).gap(1), i)
+        .child(h_flex().h(Math.max(16, a.row - 6)).items_center().gap(gap).when(left, (el) => el.child(lead(st))).when(a.icons, (el) => el.child(pic())).child(name(text, st)))
+        .child(h_flex().min_h(18).items_center().gap(6).pl((a.icons ? a.icon + gap : 0) + (left ? 16 + gap : 0))
+          .child(div().flex_1().min_w(0).truncate().text_size(a.detailText).text_color(col("detailColor", t.dim)).child(more))
+          .when(a.time, (el) => el.child(time(when))).when(!left, (el) => el.child(status(st))))
+      : card(h_flex().id(`agm-${i}`).h(a.row).items_center().gap(gap), i)
+        .when(left, (el) => el.child(lead(st)))
         .when(a.icons, (el) => el.child(pic()))
-        .child(name(more ? `${text} · ${more}` : text, st))
+        .child(name(text, st, more))
         .when(a.time, (el) => el.child(time(when)))
-        .child(status(st));
+        .when(!left, (el) => el.child(status(st)));
+    };
     const header = (label, n) => h_flex().px(8).pt(a.header < 26 ? 4 : 8).h(a.header).flex_none().gap(6).items_center().text_size(a.headerText).font_medium().text_color(t.dim)
       .child(label).child(div().text_color(t.dim).child(String(n)));
     return v_flex().w(240).p(8).rounded(8).bg(t.chrome).border_1().border_color(t.border).self_center()
       .child(div().px(8).pt(2).pb(4).text_size(a.titleText).font_medium().text_color(t.dim).child("Agents"))
       .when(a.headers, (el) => el.child(header("Working", 2)))
-      .child(row(rows[0], 0)).child(row(rows[1], 1))
+      .child(v_flex().gap(a.space).child(row(rows[0], 0)).child(row(rows[1], 1)))
       .when(a.headers, (el) => el.child(header("Idle", 1)))
       .child(row(rows[2], 2));
   }

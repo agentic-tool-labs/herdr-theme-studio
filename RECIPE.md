@@ -8,6 +8,22 @@ second or two. A Revert button puts back how things were before the Studio's fir
 
 ![Theme Studio](preview.png)
 
+## Adding it
+
+For an agent adding this mod from herdr.dev/mods. After the usual steps (copy `mods/theme-studio/`,
+merge `keys.json`, `herdr-app check`), also add the palette icon beside Settings, unless the
+person said not to:
+
+1. `herdr-app do mod.open '{"name":"theme-studio"}'` opens the Studio. It toggles, so run it once.
+2. `herdr-app do theme-studio.button=on`. It answers once the Studio has loaded; retry for a few
+   seconds until it does. On one of Herdr's own layouts this first makes the person's copy
+   (`<layout>-studio`) and switches to it, since Herdr's layouts can't take the icon. The Studio
+   closes for a moment, reopens on the copy, and adds the icon there.
+
+Then tell the person: ⌃⇧Y or the palette icon opens the Studio; they're on their copy of the layout
+(⌃⇧L switches back, and Herdr keeps updating everything else); the theme manager's Palette icon
+section removes the icon.
+
 ## What you see
 
 A window 520×720 px (`mod.json` overlay, `kind: "window"`), on the `popover` background,
@@ -163,7 +179,7 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
 - **Commands**: `herdr-app do theme-studio.<command>` or `"theme-studio:<command>"` in
   keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>`,
   `delete-theme=<name>`, `export=<name>`, `view=themes|import`, `back`, `save`, `discard`,
-  `tab=colors|type|glass|agents`, `agents=<preset>`, `agents-<key>=<n|on|off>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
+  `tab=colors|type|glass|agents`, `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
   `size=`, `stage=<key>:<value>`, `glass-color=<key>:<hex|>`, `pick=<tok:token|glass:key>`,
   `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply` (Save in the editor), `cancel`,
   `glass=Solid|Tinted|Frosted`, `bg=`, `opacity|chrome|radius|gap|angle=<n>`, `behind=`
@@ -171,7 +187,7 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `import-file=<path>`, `image=<path>` (none: the picker), `revert`.
 - **Agents list**: Herdr's `agents` mod draws it and can't be edited, so the Studio clones it as
   `mods/agents-studio` (`mod.clone`), then rebuilds the clone's `main.js` from Herdr's current one
-  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then fifteen exact
+  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then eighteen exact
   replacements (`patchAgents` in lib.js; each anchor must match once, else it refuses and Herdr's
   list stays) that read `studioAgents()`, a helper merging `{ row: 30, text: 13, icon: 16, header:
   30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time, headers, icons, badge:
@@ -187,6 +203,15 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   under the name, indented by the icon and gap). "auto" takes it when the name (plus " · detail")
   at about 0.56em a character won't fit the sidebar width less padding, icon, time and status;
   mods can't measure text. The mock list uses the same rule for its 240px.
+  `lead` "space" (Herdr's) or "session": where a row names both (grouped by status, or pinned), the
+  name and detail swap so the session's title leads. Cards: `nameColor`, `detailColor`,
+  `timeColor`, `cardColor`, `borderColor`, `selectedColor`, `hoverColor` ("" is the theme's
+  foreground, dim, dim, none, none, selected, hover; a set name color also covers idle rows),
+  `weight` normal|medium|semibold|bold for the name, `radius` 8, `pad` 8 (side padding), `space` 0
+  (gap in the list), `detailText` 11 (the second line's detail), and `statusSide` "right" or
+  "left": left puts the compact status (spinner, dot or !) in a 16px box before the icon, and a
+  two-line row's second line indents past it too. The tab's color chips use the Glass tab's
+  picker (`pick=agent:<key>`); the mock list shows all of it.
   Herdr doesn't reload a mounted clone whose file changed, so when Save rewrites the clone while
   the layout uses it, the Studio sets Herdr's list for 1.2 s and then the clone again.
 - **Image background**: Herdr gives mods no file dialog, so **Choose…** runs

@@ -224,14 +224,20 @@ function studioRadius() {
 // The agents list in the sidebar is Herdr's `agents` mod. The Studio's sizes and hidden parts go in a
 // clone, rebuilt from Herdr's current file, that reads them live from shared "theme-studio.agents".
 export const AGENTS_MOD = "agents-studio";
-export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true, lines: "one" };
+export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true, lines: "one", lead: "space",
+  detailText: 11, weight: "normal", statusSide: "right", radius: 8, pad: 8, space: 0,
+  // Colors: "" is the theme's own.
+  nameColor: "", detailColor: "", timeColor: "", cardColor: "", borderColor: "", selectedColor: "", hoverColor: "" };
 const AGENTS_PATCH = [
   ["icon(a.program, 16, t.foreground)", "icon(a.program, studioAgents().icon, t.foreground)"],
-  [".h(30)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(9)",
-    ".h(studioAgents().row)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(studioAgents().row < 26 ? 6 : 9)\n        .text_size(studioAgents().text)"],
-  [".when(Boolean(pic), el => el.child(div().id(`agent-fold-", ".when(Boolean(pic) && studioAgents().icons, el => el.child(div().id(`agent-fold-"],
+  [".px(8)\n        .h(30)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(9)\n        .when(a.focused, (el) => el.bg(t.selected))\n        .cursor_pointer()\n        .hover((s) => s.bg(t.hover))",
+    ".px(studioAgents().pad)\n        .h(studioAgents().row)\n        .flex_none()\n        .rounded(studioAgents().radius)\n        .items_center()\n        .gap(studioAgents().row < 26 ? 6 : 9)\n        .text_size(studioAgents().text)\n        .when(true, studioCard)\n        .when(a.focused, (el) => el.bg(studioAgents().selectedColor || t.selected))\n        .cursor_pointer()\n        .hover((s) => s.bg(studioAgents().hoverColor || t.hover))"],
+  [".child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))",
+    ".child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(studioAgents().nameColor || (idle ? t.muted : t.foreground)).when(true, studioWeight).child(name))"],
+  [".px(collapsed ? 0 : 8).overflow_y_scrollbar()", ".px(collapsed ? 0 : 8).when(!collapsed, (el) => el.gap(studioAgents().space)).overflow_y_scrollbar()"],
+  [".when(Boolean(pic), el => el.child(div().id(`agent-fold-", ".when(studioAgents().statusSide === \"left\", (el) => el.child(studioLeft(this.status(t, a, true))))\n        .when(Boolean(pic) && studioAgents().icons, el => el.child(div().id(`agent-fold-"],
   [".when(this.hovered !== a.address && Boolean(when), el =>", ".when(this.hovered !== a.address && Boolean(when) && studioAgents().time, el =>"],
-  [".child(this.status(t, a, byPriority && !isPinned));", ".child(this.status(t, a, (byPriority && !isPinned) || !studioAgents().badge));"],
+  [".child(this.status(t, a, byPriority && !isPinned));", ".when(studioAgents().statusSide !== \"left\", (el) => el.child(this.status(t, a, (byPriority && !isPinned) || !studioAgents().badge)));"],
   [".id(g.id)\n        .px(8)\n        .pt(8)\n        .h(30)", ".id(g.id)\n        .px(8)\n        .pt(studioAgents().header < 26 ? 4 : 8)\n        .h(studioAgents().header)"],
   [": groups.flatMap((g) => [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]);",
     ": groups.flatMap((g) => studioAgents().headers ? [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))] : g.members.flatMap(withKids));"],
@@ -239,27 +245,30 @@ const AGENTS_PATCH = [
   [".rounded(8)\n      .h(26)\n      .flex_none()\n      .gap(0)\n      .items_center()\n      .text_size(12.5)",
     ".rounded(8)\n      .h(Math.max(16, studioAgents().row - 4))\n      .flex_none()\n      .gap(0)\n      .items_center()\n      .text_size(studioAgents().text - 0.5)"],
   ["        .items_center()\n        .text_size(11)\n        .font_medium()", "        .items_center()\n        .text_size(studioAgents().headerText)\n        .font_medium()"],
-  [".child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when)))", ".child(div().flex_none().text_size(studioAgents().timeText).text_color(t.dim).child(duration(now - when)))"],
+  [".child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when)))", ".child(div().flex_none().text_size(studioAgents().timeText).text_color(studioAgents().timeColor || t.dim).child(duration(now - when)))"],
   [".child(div().text_size(11.5).font_medium().text_color(t.dim).child(\"Agents\"))", ".child(div().text_size(studioAgents().titleText).font_medium().text_color(t.dim).child(\"Agents\"))"],
   ["px(6).h(18).rounded(5).bg(t.blocked + \"26\").text_size(10.5)", "px(6).h(studioAgents().badgeText + 7.5).rounded(5).bg(t.blocked + \"26\").text_size(studioAgents().badgeText)"],
   [".size(14).flex_none().rounded(4).bg(t.blocked + \"26\").text_size(10.5)", ".size(studioAgents().badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + \"26\").text_size(studioAgents().badgeText)"],
   // Two lines: the icon and name on top; the detail, machine, time and status under the name.
   ["      const name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));\n",
-    `      const name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
-      const studioMore = full && more ? more : "";
+    `      let name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
+      let studioMore = full && more ? more : "";
+      // "session": the session's title leads and its workspace follows.
+      if (studioMore && studioAgents().lead === "session") [name, studioMore] = [studioMore, name];
       if (studioTwoLines(name, studioMore)) {
-        const S = studioAgents(), gap = S.row < 26 ? 6 : 9, showPic = Boolean(pic) && S.icons;
+        const S = studioAgents(), gap = S.row < 26 ? 6 : 9, showPic = Boolean(pic) && S.icons, left = S.statusSide === "left";
         return v_flex()
           .id(\`ag-\${a.address}\`)
-          .px(8)
+          .px(S.pad)
           .py(3)
           .flex_none()
-          .rounded(8)
+          .rounded(S.radius)
           .gap(1)
           .text_size(S.text)
-          .when(a.focused, (el) => el.bg(t.selected))
+          .when(true, studioCard)
+          .when(a.focused, (el) => el.bg(S.selectedColor || t.selected))
           .cursor_pointer()
-          .hover((s) => s.bg(t.hover))
+          .hover((s) => s.bg(S.hoverColor || t.hover))
           .on_hover((on, cx) => {
             if (on) this.hovered = a.address;
             else if (this.hovered === a.address) this.hovered = null;
@@ -267,22 +276,25 @@ const AGENTS_PATCH = [
           })
           .on_click(() => run("pane.focus", { pane: a.pane }))
           .child(h_flex().h(Math.max(16, S.row - 6)).items_center().gap(gap)
+            .when(left, (el) => el.child(studioLeft(this.status(t, a, true))))
             .when(showPic, el => el.child(div().id(\`agent-fold-\${a.address}\`)
               .when(subs.length > 0, el => el.on_click((_e, cx) => {
                 cx.stop_propagation();
                 this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
                 cx.notify();
               })).child(pic)))
-            .child(div().flex_1().min_w(0).truncate().text_color(idle ? t.muted : t.foreground).child(name))
+            .child(div().flex_1().min_w(0).truncate().text_color(S.nameColor || (idle ? t.muted : t.foreground)).when(true, studioWeight).child(name))
             .when(subs.length > 0, el => el.child(fold(a, subs))))
-          .child(h_flex().min_h(18).items_center().gap(6).pl(showPic ? S.icon + gap : 0)
-            .child(div().flex_1().min_w(0).truncate().text_size(S.timeText).text_color(t.dim).child(studioMore))
+          .child(h_flex().min_h(18).items_center().gap(6).pl((showPic ? S.icon + gap : 0) + (left ? 16 + gap : 0))
+            .child(div().flex_1().min_w(0).truncate().text_size(S.detailText).text_color(S.detailColor || t.dim).child(studioMore))
             .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
             .when(this.hovered === a.address, el => el.child(pin))
-            .when(this.hovered !== a.address && Boolean(when) && S.time, el => el.child(div().flex_none().text_size(S.timeText).text_color(t.dim).child(duration(now - when))))
-            .child(this.status(t, a, (byPriority && !isPinned) || !S.badge)));
+            .when(this.hovered !== a.address && Boolean(when) && S.time, el => el.child(div().flex_none().text_size(S.timeText).text_color(S.timeColor || t.dim).child(duration(now - when))))
+            .when(!left, (el) => el.child(this.status(t, a, (byPriority && !isPinned) || !S.badge))));
       }
 `],
+  // One line: the same order as two.
+  [".truncate().text_color(t.dim).child(`\\u00b7 ${more}`)", ".truncate().text_color(studioAgents().detailColor || t.dim).child(`\\u00b7 ${studioMore}`)"],
 ];
 /** Herdr's agents mod with the Studio's sizes and parts, or null when its code no longer matches. */
 export function patchAgents(src) {
@@ -296,6 +308,17 @@ export function patchAgents(src) {
   const helper = `
 // Added by Theme Studio: row sizes and the parts shown, from shared "theme-studio.agents".
 function studioAgents() { return { ...${JSON.stringify(AGENTS_DEFAULT)}, ...(shared("theme-studio.agents") || {}) }; }
+// A card's own background and border, when set.
+function studioCard(el) {
+  const s = studioAgents();
+  return (s.cardColor ? el.bg(s.cardColor) : el).when(Boolean(s.borderColor), (e) => e.border_1().border_color(s.borderColor));
+}
+// The status on the left: compact, in a fixed box so names line up.
+function studioLeft(status) { return h_flex().w(16).flex_none().items_center().justify_center().child(status); }
+function studioWeight(el) {
+  const w = studioAgents().weight;
+  return w === "bold" ? el.font_bold() : w === "semibold" ? el.font_semibold() : w === "medium" ? el.font_medium() : el;
+}
 // One line, two, or "auto": two when the name (and its detail) wouldn't fit beside the time and status.
 // ponytail: width estimated from the character count (about 0.56em a character); mods can't measure text.
 function studioTwoLines(name, more) {

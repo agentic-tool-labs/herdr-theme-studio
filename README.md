@@ -15,7 +15,9 @@ build it from scratch.
 
 On [herdr.dev/mods](https://herdr.dev/mods), copy Theme Studio's line and give it to your agent.
 It copies `mods/theme-studio/` into `~/.config/herdr-app/mods/` and merges `keys.json` into yours.
-Then press `ctrl-shift-y`. By hand: copy that folder yourself and add
+It also adds the palette icon beside Settings (on Herdr's own
+layout that means switching you to your own copy of it, `<layout>-studio`; ⌃⇧L switches back). Then
+press `ctrl-shift-y` or the icon. By hand: copy that folder yourself and add
 `"ctrl-shift-y": "mod.open:theme-studio"` to the `global` section of your `keys.json`.
 
 Your agent will mention that the Studio runs programs and reads files outside its folder. It runs
@@ -45,7 +47,8 @@ that folder and stay. Close and reopen the Studio afterwards.
   extra sections (Herdr rewrites it on every start), and its sidebar mod and built-in layouts can't
   be edited. So the Studio makes your own copy of the layout (`<layout>-studio`) and a patched
   clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. The theme
-  manager's Palette icon section adds or removes it. On the narrow sidebar rail it gets its own row under Settings.
+  manager's Palette icon section adds or removes it, as does `button=on|off`; on Herdr's own layout
+  `button=on` makes your copy first. On the narrow sidebar rail it gets its own row under Settings.
 
 ## How it's laid out
 
@@ -72,7 +75,7 @@ real window shows every change; a mock window above shows them too. Nothing is k
 |---|---|---|
 | Colors | `themes/<name>.json`; Behind panes goes on the layout | Every theme color, with WCAG contrast badges on text tokens. Click one to edit it with the color picker. Also the color behind panes, and the cursor: color (theme) plus shape (Block, Underline, Bar) and blink. Herdr only rereads a theme file when it's picked, so the Studio re-picks after each write. |
 | Type | `settings.json` (`font`, `font_size`, `ui_font`, `font_ligatures`, `minimum_contrast`) | A sample terminal shows picks at once (font, size, ligatures, contrast lift). Herdr rereads `settings.json` only every few seconds (up to about 10), so on your own layout copy fonts and size also go on the layout for 15 s and show at once. Fonts render in their own face. "Open fonts folder" is for `.ttf`/`.otf` files Herdr loads without installing them system-wide. |
-| Agents | shared `theme-studio.agents`; the layout's agents block | The sidebar's agents list: Comfortable (Herdr's own), Compact or Dense; rows on one line, two lines (the name on top, the detail, time and status under it), or two lines only when the name wouldn't fit; sliders for row height, icon size, group header height, and the text size of agent names, group headers, the time since, the "Agents" title and the badge (the font stays the UI font), and switches for the time since, group headers, icons and the "Needs you" badge (off: a small !). A mock list shows them before Save. Herdr's agents mod can't be edited, so once anything differs from Herdr's, your layout copy shows `mods/agents-studio`: a copy of Herdr's list, rebuilt from it on each Save, that reads these settings live. If a Herdr update changes the list too much to adjust, the Studio says so and keeps Herdr's. |
+| Agents | shared `theme-studio.agents`; the layout's agents block | The sidebar's agents list: Comfortable (Herdr's own), Compact or Dense; rows on one line, two lines (the name on top, the detail, time and status under it), or two lines only when the name wouldn't fit; which leads a row that names both, the workspace or the session's title; sliders for row height, icon size, group header height, and the text size of agent names, group headers, the time since, the "Agents" title and the badge (the font stays the UI font), and switches for the time since, group headers, icons and the "Needs you" badge (off: a small !). Cards: colors for the name, detail, time, card background, border, the selected row and hover (unset ones follow the theme), the name's weight, corner radius, side padding, space between cards, the second line's text size, and the status (spinner, dot, Needs you) on the left or right. A mock list shows them before Save. Herdr's agents mod can't be edited, so once anything differs from Herdr's, your layout copy shows `mods/agents-studio`: a copy of Herdr's list, rebuilt from it on each Save, that reads these settings live. If a Herdr update changes the list too much to adjust, the Studio says so and keeps Herdr's. |
 | Glass | the shown layout, through `layout.set` | Herdr's own layouts refuse these fields, so the tab first makes your copy (`<layout>-studio`). Background: theme, a gradient in two colors you pick, Bloom (a base color with three soft glows, rendered into a picture), frosted wallpaper or image (Choose… opens the macOS file picker; you can also drop a picture, and one from outside Herdr's folder is copied into `backgrounds/`); the glass surfaces' opacity (their color is the theme's chrome and terminal color); pane radius, the margin around the panes, and the gap between them. |
 
 12 presets ship in `presets/` (sources in `presets/SOURCES.md`); applying one copies it into `themes/`.
@@ -123,7 +126,7 @@ Manager: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<f
 editor: `tab=<colors|type|glass>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
-`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
+`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `button=on|off` · `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
 ## Checks

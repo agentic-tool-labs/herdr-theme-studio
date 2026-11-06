@@ -222,6 +222,8 @@ const shippedAgents = `${process.env.HOME}/.config/herdr-app/mods/agents/main.js
 if (existsSync(shippedAgents)) {
   const pa = patchAgents(readFileSync(shippedAgents, "utf8"));
   assert.ok(pa && pa.includes("function studioAgents()") && pa.includes(".h(studioAgents().row)"), "the shipped agents mod patches");
+  assert.ok(pa.includes("[name, studioMore] = [studioMore, name]") && pa.includes("\\u00b7 ${studioMore}"), "the session can lead on both layouts");
+  assert.ok(["studioCard)", "studioWeight)", "selectedColor ||", "detailColor ||", "studioLeft(this.status(t, a, true))"].every((k) => pa.split(k).length === 3), "cards and the status side reach both layouts");
   assert.equal(patchAgents(pa), pa);
 }
 assert.equal(patchAgents('import { shared } from "herdr";\nnothing to patch'), null, "a changed agents mod is refused");
