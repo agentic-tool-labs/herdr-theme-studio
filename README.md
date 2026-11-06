@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/herdr-ram.svg" width="620" alt="The Herdr ram, drawn in colored ASCII"></p>
+<p align="center"><img src="docs/herdr-ram.svg" width="310" alt="The Herdr ram, drawn in colored ASCII"></p>
 
 <h1 align="center">Herdr Desktop: Theme Studio</h1>
 
