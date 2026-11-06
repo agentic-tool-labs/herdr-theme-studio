@@ -13,17 +13,21 @@ build it from scratch.
 
 ## Install
 
-Copy `mods/theme-studio/` into `~/.config/herdr-app/mods/`, merge `keys.json` into yours,
-and press `ctrl-shift-y`. Or let the script do both:
+On [herdr.dev/mods](https://herdr.dev/mods), copy Theme Studio's line and give it to your agent.
+It copies `mods/theme-studio/` into `~/.config/herdr-app/mods/` and merges `keys.json` into yours.
+Then press `ctrl-shift-y`. By hand: copy that folder yourself and add
+`"ctrl-shift-y": "mod.open:theme-studio"` to the `global` section of your `keys.json`.
 
-```sh
-./install.sh            # copies mods/theme-studio into ~/.config/herdr-app and binds ctrl-shift-y
-./install.sh --remove   # removes the mod and the key; your themes, settings and layouts stay
-```
+Your agent will mention that the Studio runs programs and reads files outside its folder. It runs
+`osascript` to blur the wallpaper and render Bloom, and it reads `.itermcolors` files in Downloads and on
+the Desktop for import.
 
-Requires Herdr app 0.1.13 or later on macOS (Frosted wallpaper is macOS only), and node for the installer.
-Re-run `install.sh` after editing the source. Herdr's hot reload doesn't follow symlinks, so it copies.
-An open Studio window keeps its old build until you close and reopen it.
+Requires Herdr app 0.1.13 or later on macOS (Frosted wallpaper and Bloom are macOS only).
+
+**Working on the source:** `./install.sh` copies `mods/theme-studio` into `~/.config/herdr-app` and
+binds `ctrl-shift-y` (needs node). `./install.sh --remove` takes both out; your themes, settings and
+layouts stay. Re-run it after each edit: Herdr's hot reload doesn't follow symlinks, so it copies. An
+open Studio window keeps its old build until you close and reopen it.
 
 ## Opening it
 
