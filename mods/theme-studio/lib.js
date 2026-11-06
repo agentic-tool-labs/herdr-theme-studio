@@ -224,7 +224,7 @@ function studioRadius() {
 // The agents list in the sidebar is Herdr's `agents` mod. The Studio's sizes and hidden parts go in a
 // clone, rebuilt from Herdr's current file, that reads them live from shared "theme-studio.agents".
 export const AGENTS_MOD = "agents-studio";
-export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true };
+export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true, lines: "one" };
 const AGENTS_PATCH = [
   ["icon(a.program, 16, t.foreground)", "icon(a.program, studioAgents().icon, t.foreground)"],
   [".h(30)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(9)",
@@ -243,6 +243,46 @@ const AGENTS_PATCH = [
   [".child(div().text_size(11.5).font_medium().text_color(t.dim).child(\"Agents\"))", ".child(div().text_size(studioAgents().titleText).font_medium().text_color(t.dim).child(\"Agents\"))"],
   ["px(6).h(18).rounded(5).bg(t.blocked + \"26\").text_size(10.5)", "px(6).h(studioAgents().badgeText + 7.5).rounded(5).bg(t.blocked + \"26\").text_size(studioAgents().badgeText)"],
   [".size(14).flex_none().rounded(4).bg(t.blocked + \"26\").text_size(10.5)", ".size(studioAgents().badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + \"26\").text_size(studioAgents().badgeText)"],
+  // Two lines: the icon and name on top; the detail, machine, time and status under the name.
+  ["      const name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));\n",
+    `      const name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
+      const studioMore = full && more ? more : "";
+      if (studioTwoLines(name, studioMore)) {
+        const S = studioAgents(), gap = S.row < 26 ? 6 : 9, showPic = Boolean(pic) && S.icons;
+        return v_flex()
+          .id(\`ag-\${a.address}\`)
+          .px(8)
+          .py(3)
+          .flex_none()
+          .rounded(8)
+          .gap(1)
+          .text_size(S.text)
+          .when(a.focused, (el) => el.bg(t.selected))
+          .cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .on_hover((on, cx) => {
+            if (on) this.hovered = a.address;
+            else if (this.hovered === a.address) this.hovered = null;
+            cx.notify();
+          })
+          .on_click(() => run("pane.focus", { pane: a.pane }))
+          .child(h_flex().h(Math.max(16, S.row - 6)).items_center().gap(gap)
+            .when(showPic, el => el.child(div().id(\`agent-fold-\${a.address}\`)
+              .when(subs.length > 0, el => el.on_click((_e, cx) => {
+                cx.stop_propagation();
+                this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
+                cx.notify();
+              })).child(pic)))
+            .child(div().flex_1().min_w(0).truncate().text_color(idle ? t.muted : t.foreground).child(name))
+            .when(subs.length > 0, el => el.child(fold(a, subs))))
+          .child(h_flex().min_h(18).items_center().gap(6).pl(showPic ? S.icon + gap : 0)
+            .child(div().flex_1().min_w(0).truncate().text_size(S.timeText).text_color(t.dim).child(studioMore))
+            .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
+            .when(this.hovered === a.address, el => el.child(pin))
+            .when(this.hovered !== a.address && Boolean(when) && S.time, el => el.child(div().flex_none().text_size(S.timeText).text_color(t.dim).child(duration(now - when))))
+            .child(this.status(t, a, (byPriority && !isPinned) || !S.badge)));
+      }
+`],
 ];
 /** Herdr's agents mod with the Studio's sizes and parts, or null when its code no longer matches. */
 export function patchAgents(src) {
@@ -256,6 +296,14 @@ export function patchAgents(src) {
   const helper = `
 // Added by Theme Studio: row sizes and the parts shown, from shared "theme-studio.agents".
 function studioAgents() { return { ...${JSON.stringify(AGENTS_DEFAULT)}, ...(shared("theme-studio.agents") || {}) }; }
+// One line, two, or "auto": two when the name (and its detail) wouldn't fit beside the time and status.
+// ponytail: width estimated from the character count (about 0.56em a character); mods can't measure text.
+function studioTwoLines(name, more) {
+  const s = studioAgents();
+  if (s.lines !== "auto") return s.lines === "two";
+  const room = (find(layout(), "sidebar")?.size?.px ?? 268) - 32 - (s.icons ? s.icon + 9 : 0) - (s.time ? 30 : 0) - 24;
+  return (String(name).length + (more ? more.length + 3 : 0)) * s.text * 0.56 > room;
+}
 `;
   const at = out.indexOf("\n", out.indexOf('from "herdr";')) + 1;
   return out.slice(0, at) + helper + out.slice(at);

@@ -171,7 +171,7 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `import-file=<path>`, `image=<path>` (none: the picker), `revert`.
 - **Agents list**: Herdr's `agents` mod draws it and can't be edited, so the Studio clones it as
   `mods/agents-studio` (`mod.clone`), then rebuilds the clone's `main.js` from Herdr's current one
-  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then fourteen exact
+  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then fifteen exact
   replacements (`patchAgents` in lib.js; each anchor must match once, else it refuses and Herdr's
   list stays) that read `studioAgents()`, a helper merging `{ row: 30, text: 13, icon: 16, header:
   30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time, headers, icons, badge:
@@ -182,6 +182,13 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   24/12/14/24, 10.5/10.5/11/10; Dense 20/11.5/12/20, 10/10/10.5/9.5. The badge's height is its
   text plus 7.5, the "!" box its text plus 3.5. Sub-agent rows follow at row
   minus 4, text minus 0.5, icon minus 2. Saved with the theme like glass.
+  `lines` is "one" (Herdr's row), "two", or "auto": an inserted branch after the row's `const name`
+  returns a two-line row (icon, name and fold on top; the detail, machine, time or pin, and status
+  under the name, indented by the icon and gap). "auto" takes it when the name (plus " · detail")
+  at about 0.56em a character won't fit the sidebar width less padding, icon, time and status;
+  mods can't measure text. The mock list uses the same rule for its 240px.
+  Herdr doesn't reload a mounted clone whose file changed, so when Save rewrites the clone while
+  the layout uses it, the Studio sets Herdr's list for 1.2 s and then the clone again.
 - **Image background**: Herdr gives mods no file dialog, so **Choose…** runs
   `osascript -e 'POSIX path of (choose file of type {"public.image"} ...)'` (cancel returns nothing).
   The row also takes a dropped file. Layouts read pictures only inside Herdr's folder, so a

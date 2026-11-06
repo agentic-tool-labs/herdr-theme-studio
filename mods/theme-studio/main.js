@@ -207,7 +207,7 @@ export default class ThemeStudio extends View {
     else if (verb === "import-file") this.importFile(arg, cx);
     else if (verb === "behind") this.stageGlass({ behind: arg }, cx);
     else if (verb === "agents" && AGENT_PRESETS[arg]) this.stageAgents({ ...AGENT_PRESETS[arg] }, cx);
-    else if (verb.startsWith("agents-") && verb.slice(7) in AGENTS_DEFAULT) { const k = verb.slice(7); this.stageAgents({ [k]: typeof AGENTS_DEFAULT[k] === "boolean" ? arg !== "off" : Number(arg) }, cx); }
+    else if (verb.startsWith("agents-") && verb.slice(7) in AGENTS_DEFAULT) { const k = verb.slice(7); const d = AGENTS_DEFAULT[k]; this.stageAgents({ [k]: typeof d === "boolean" ? arg !== "off" : typeof d === "string" ? arg : Number(arg) }, cx); }
     else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
     else if (verb === "button") this.setButton(arg !== "off", cx);
     else if (verb !== "focus") this.say(`Unknown command ${c}`, "error", cx);
@@ -576,7 +576,13 @@ export default class ThemeStudio extends View {
 
   // Saves the agents list settings (the clone reads them live) and points the layout at the clone.
   async writeAgents(cx, a) {
-    if (Object.keys(AGENTS_DEFAULT).some((k) => a[k] !== AGENTS_DEFAULT[k])) await this.ensureAgentsClone(cx);
+    const custom = Object.keys(AGENTS_DEFAULT).some((k) => a[k] !== AGENTS_DEFAULT[k]);
+    // Herdr doesn't reload a mounted clone whose file changed, so a rewritten one is remounted:
+    // Herdr's list for a moment, then the clone again.
+    if (custom && (await this.ensureAgentsClone(cx)) && JSON.stringify(layout()).includes(`"${AGENTS_MOD}"`)) {
+      run("layout.set", { layout: withAgentsMod(layout(), false) });
+      await sleep(cx, 1200);
+    }
     setShared(K.agents, a);
     this.pushGlass();
   }
@@ -594,7 +600,9 @@ export default class ThemeStudio extends View {
     const want = own && patchAgents(own);
     if (!want) throw new Error("This Herdr version's agents list changed, so the Studio can't resize it yet. Herdr's own list stays.");
     const now = await readTextFile(`${dir}/main.js`);
-    if (want !== now) await writeTextFile(`${dir}/main.js`, want, now);
+    if (want === now) return false;
+    await writeTextFile(`${dir}/main.js`, want, now);
+    return true;
   }
 
   async ensureRoundedHeader(cx) {
@@ -1303,6 +1311,9 @@ export default class ThemeStudio extends View {
       .child(this.section("Density", t, h_flex().flex_wrap().gap(6)
         .children(Object.keys(AGENT_PRESETS).map((name) => this.pill(`agp-${name}`, name, preset && preset[0] === name, t, (_e, cx) => this.stageAgents({ ...AGENT_PRESETS[name] }, cx)))),
         "Comfortable is Herdr's own list. Fine-tune with the sliders."))
+      .child(this.section("Row layout", t, h_flex().flex_wrap().gap(6)
+        .children([["one", "One line"], ["two", "Two lines"], ["auto", "Two lines when needed"]].map(([v, label]) => this.pill(`agl-${v}`, label, a.lines === v, t, (_e, cx) => this.stageAgents({ lines: v }, cx)))),
+        "Two lines keep the name on top and put the detail, time and status under it. \"When needed\" does that only for a name too long to sit beside them, so it follows the sidebar's width."))
       .child(this.section("Sizes", t, v_flex().gap(12)
         .child(this.slider(t, this.agentSliders.row, "ag-row", "Row height", px(a.row)))
         .child(this.slider(t, this.agentSliders.text, "ag-text", "Agent name text", px(a.text)))
@@ -1324,17 +1335,28 @@ export default class ThemeStudio extends View {
 
   // A mock of the sidebar's agents list with the staged sizes.
   agentsPreview(t, a) {
-    const rows = [["herdr-app-theming", "3m", "working"], ["agent-tools-private", "12m", "blocked"], ["notes", "1h", "idle"]];
+    const rows = [["herdr-app-theming", "3m", "working", "Herdr theming plugin design"], ["agent-tools-private", "12m", "blocked", "ah2-fix: implementor"], ["notes", "1h", "idle", ""]];
+    // The same rule as the clone's "auto", for this 240px mock.
+    const two = (name, more) => a.lines === "two" || (a.lines === "auto" && (name.length + (more ? more.length + 3 : 0)) * a.text * 0.56 > 240 - 32 - (a.icons ? a.icon + 9 : 0) - (a.time ? 30 : 0) - 24);
     const status = (st) => st === "working" ? div().size(10).flex_none().rounded(5).border_2().border_color(t.working)
       : st === "blocked" ? (a.badge ? div().flex_none().px(6).h(a.badgeText + 7.5).rounded(5).bg(t.blocked + "26").text_size(a.badgeText).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
         : div().size(a.badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + "26").text_size(a.badgeText).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!"))
       : div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle || t.dim);
-    const row = ([name, when, st], i) => h_flex().id(`agm-${i}`).px(8).h(a.row).flex_none().rounded(8).items_center().gap(a.row < 26 ? 6 : 9).text_size(a.text)
-      .when(i === 0, (el) => el.bg(t.selected))
-      .when(a.icons, (el) => el.child(div().size(a.icon).flex_none().rounded(4).bg(t.accent)))
-      .child(div().flex_1().min_w(0).truncate().text_color(st === "idle" ? t.muted : t.foreground).child(name))
-      .when(a.time, (el) => el.child(div().flex_none().text_size(a.timeText).text_color(t.dim).child(when)))
-      .child(status(st));
+    const gap = a.row < 26 ? 6 : 9, pic = () => div().size(a.icon).flex_none().rounded(4).bg(t.accent);
+    const name = (text, st) => div().flex_1().min_w(0).truncate().text_color(st === "idle" ? t.muted : t.foreground).child(text);
+    const time = (when) => div().flex_none().text_size(a.timeText).text_color(t.dim).child(when);
+    const row = ([text, when, st, more], i) => two(text, more)
+      ? v_flex().id(`agm-${i}`).px(8).py(3).flex_none().rounded(8).gap(1).text_size(a.text).when(i === 0, (el) => el.bg(t.selected))
+        .child(h_flex().h(Math.max(16, a.row - 6)).items_center().gap(gap).when(a.icons, (el) => el.child(pic())).child(name(text, st)))
+        .child(h_flex().min_h(18).items_center().gap(6).pl(a.icons ? a.icon + gap : 0)
+          .child(div().flex_1().min_w(0).truncate().text_size(a.timeText).text_color(t.dim).child(more))
+          .when(a.time, (el) => el.child(time(when))).child(status(st)))
+      : h_flex().id(`agm-${i}`).px(8).h(a.row).flex_none().rounded(8).items_center().gap(gap).text_size(a.text)
+        .when(i === 0, (el) => el.bg(t.selected))
+        .when(a.icons, (el) => el.child(pic()))
+        .child(name(more ? `${text} · ${more}` : text, st))
+        .when(a.time, (el) => el.child(time(when)))
+        .child(status(st));
     const header = (label, n) => h_flex().px(8).pt(a.header < 26 ? 4 : 8).h(a.header).flex_none().gap(6).items_center().text_size(a.headerText).font_medium().text_color(t.dim)
       .child(label).child(div().text_color(t.dim).child(String(n)));
     return v_flex().w(240).p(8).rounded(8).bg(t.chrome).border_1().border_color(t.border).self_center()
