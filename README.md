@@ -29,6 +29,15 @@ binds `ctrl-shift-y` (needs node). `./install.sh --remove` takes both out; your 
 layouts stay. Re-run it after each edit: Herdr's hot reload doesn't follow symlinks, so it copies. An
 open Studio window keeps its old build until you close and reopen it.
 
+## Updating
+
+Herdr mods have no update channel, so check the
+[tags](https://github.com/agentic-tool-labs/herdr-theme-studio/tags) for a newer version. To update, tell
+your agent: "Update Theme Studio from github.com/agentic-tool-labs/herdr-theme-studio: replace my
+`mods/theme-studio/` folder with the repo's." Say "replace": by default an agent adds a second copy
+under a new name rather than overwrite. Your themes, settings, layouts and saved looks live outside
+that folder and stay. Close and reopen the Studio afterwards.
+
 ## Opening it
 
 - **⌃⇧Y** toggles the window.
