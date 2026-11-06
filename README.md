@@ -7,9 +7,9 @@ build it from scratch.
 
 ![Theme Studio](preview.png)
 
-| Bloom glass, Studio closed | Colors and cursor | Themes |
+| Theme manager (Tokyo Night) | Editing colors (Rosé Pine) | Bloom glass, Studio closed (coolnight) |
 |---|---|---|
-| ![Bloom glass](docs/screenshots/window.png) | ![Colors tab](docs/screenshots/colors.png) | ![Themes tab](docs/screenshots/themes.png) |
+| ![Theme manager](docs/screenshots/manager.png) | ![Editor, Colors tab](docs/screenshots/editor.png) | ![Bloom glass](docs/screenshots/window.png) |
 
 ## Install
 

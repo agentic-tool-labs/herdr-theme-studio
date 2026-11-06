@@ -724,7 +724,7 @@ export default class ThemeStudio extends View {
     if (!this.isOwn(name)) return this.say(`${name} isn't yours to change: copy it first`, "error", cx);
     const open = async () => {
       this.editing = name; setShared(K.editing, name);
-      this.view = "edit"; this.ask = null; this.leaving = false;
+      this.view = "edit"; this.ask = null; this.leaving = false; this.msg = null;
       cx.spawn((cx) => this.checkCursorHook(cx));
     };
     if (settings().theme === name && !this.themeDraft) return cx.spawn((cx) => this.guard(cx, "Opening", open));
