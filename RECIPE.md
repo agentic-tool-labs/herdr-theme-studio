@@ -96,9 +96,13 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   keyboard when it opens. The last tab is remembered (shared `theme-studio.tab`).
 - No agent statuses: the Studio is about the look, not the agents. The Agent status colors
   (`working`, `blocked`, `done`, `idle`, `unknown`) are editable tokens like any other.
-- **Picking a theme** runs `app.theme {name}`, which sets the half that matches its
-  lightness. A preset is first written to `themes/<name>.json`, then the Studio waits for
-  `themes()` to list it.
+- **Picking a theme** stages it (the mock window shows it; a preset's panel colors are guessed
+  from its background until Herdr derives them). Apply runs `app.theme {name}`, which sets the
+  half that matches its lightness; a preset is first written to `themes/<name>.json` and the
+  Studio waits for `themes()` to list it. Glass colors set to a fixed hex (tints, glows,
+  gradient ends, behind panes) go back to their theme-following defaults in the same Apply, and
+  translucent glass is pushed again: its colors are hexes of the theme's. Staging a theme drops
+  staged color edits, which were for the old theme.
 - **Setting a color** writes the theme file and then picks the theme again: Herdr reads a
   theme file only when it's picked. Panel tokens go in the file's `colors` block (Reset
   deletes them); `background`, `terminal_foreground`, `selection`, `cursor` and `ansiN` are
@@ -106,10 +110,10 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
 - **Type** writes `settings.json` (`font`, `font_size`, `ui_font`, `font_ligatures`,
   `minimum_contrast`), merged key by key through `writeTextFile(path, text, expected)` with
   one retry if the file changed under it.
-- **Staging**: Type, Colors and Glass controls stage into three drafts (settings, theme
-  tokens, glass); previews, sliders and the picker show them. **Apply** writes them in one
-  guarded task: `settings.json`, then the theme file (all tokens in one write), then one
-  `layout.set` of the whole personal tree. Cancel drops all three.
+- **Staging**: Themes, Type, Colors and Glass controls stage into drafts (theme pick, settings,
+  theme tokens, glass); previews, sliders and the picker show them. **Apply** writes them in one
+  guarded task: the theme pick, `settings.json`, then the theme file (all tokens in one write),
+  then one `layout.set` of the whole personal tree. Cancel drops them all.
 - **Cursor shape** isn't a Herdr setting; terminals take DECSCUSR (`ESC [ n SP q`: block 2,
   underline 4, bar 6, blinking one less). Apply writes `cursor-shape` (the number) and
   `cursor.zsh` (a zsh precmd hook, only when `TERM_PROGRAM=ghostty`, that sends it) to the app

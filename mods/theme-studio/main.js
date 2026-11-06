@@ -53,6 +53,15 @@ const GLASS_PRESETS = {
 const SLIDERS = { opacity: [0.3, 1, 0.01], chrome: [0.2, 1, 0.01], radius: [0, 20, 1], gap: [0, 24, 1], margin: [0, 32, 1], angle: [0, 360, 5], glowIntensity: [0, 200, 5] };
 // Glass fields the bloom picture is drawn from: changing one re-renders it.
 const BLOOM_KEYS = ["bg", "bloomBase", "glowA", "glowB", "glowC", "glowIntensity"];
+// A bundled preset's colors before Herdr has derived the rest: enough for the mock window.
+// ponytail: panel colors are guessed from the background; Herdr's own derivation shows after Apply.
+const presetColors = (f) => ({
+  background: f.background, foreground: f.foreground, canvas: f.background, chrome: f.background, surface: f.background,
+  cursor: f.cursor || f.foreground, selection: f.selection || f.ansi[8], accent: f.ansi[4],
+  ...Object.fromEntries(f.ansi.map((c, i) => [`ansi${i}`, c])), ...(f.colors || {}),
+});
+// Glass colors that can hold a fixed hex. Applying a new theme puts these back to the theme's own.
+const GLASS_COLORS = ["from", "to", "tintChrome", "tintPane", "bloomBase", "glowA", "glowB", "glowC", "behind"];
 const MIN_SIZE = 8, MAX_SIZE = 32;
 const CONTRASTS = [1, 1.6, 3, 4.5, 7];
 
@@ -73,6 +82,7 @@ export default class ThemeStudio extends View {
     this.draft = {}; // Type picks not yet applied, in settings.json names
     this.colorDraft = {}; // theme tokens not yet applied: hex, or null to reset
     this.cursorDraft = {}; // cursor shape and blink not yet applied
+    this.themeDraft = null; // { name, preset?, colors } picked on Themes, not yet applied
     this.pickTarget = null; // the color the picker edits: "tok:<token>" or "glass:<key>"
     this.fontQuery = "";
 
@@ -144,8 +154,7 @@ export default class ThemeStudio extends View {
     const num = Number(arg);
     if (verb === "tab" && TABS.some(([id]) => id === arg)) { this.tab = arg; setShared(K.tab, arg); }
     else if (verb === "theme") {
-      const p = this.presets.find((x) => x.name === arg);
-      if (p && !themes().some((t) => t.name === arg)) this.applyPreset(p, cx); else this.applyTheme(arg, cx);
+      this.stageTheme(arg, cx);
     } else if (verb === "color") { const [tok, hex] = arg.split(":"); this.selectTarget(`tok:${tok}`, cx, false); this.stageHex(hex, cx); }
     else if (verb === "reset") this.stageColor(arg, null, cx);
     else if (verb === "glass-color") { const [key, hex] = arg.split(":"); this.selectTarget(`glass:${key}`, cx, false); this.stageHex(hex ?? "", cx); }
@@ -241,17 +250,9 @@ export default class ThemeStudio extends View {
   }
 
   // --- themes ----------------------------------------------------------------
-  applyPreset(p, cx) {
-    cx.spawn((cx) => this.guard(cx, `Applying ${p.name}`, async () => {
-      if (!(await readTextFile(themePath(p.name)))) await this.writeThemeFile(p.name, p.file);
-      else if (!ownedThemes().includes(p.name)) setShared(K.owned, [...ownedThemes(), p.name]);
-      await this.useTheme(cx, p.name);
-      this.say(`${p.name} is on`, "success", cx);
-    }));
-  }
-
-  applyTheme(name, cx) {
-    cx.spawn((cx) => this.guard(cx, `Applying ${name}`, async () => { await this.useTheme(cx, name); this.say(`${name} is on`, "success", cx); }));
+  async installPreset(p) {
+    if (!(await readTextFile(themePath(p.name)))) await this.writeThemeFile(p.name, p.file);
+    else if (!ownedThemes().includes(p.name)) setShared(K.owned, [...ownedThemes(), p.name]);
   }
 
   // The theme being edited must be a file the Studio owns; anything else is forked to <name>-custom first.
@@ -333,13 +334,39 @@ export default class ThemeStudio extends View {
   // Colors, glass and Type picks are staged: the previews show them and Apply writes them all.
 
   // The current theme's own colors (not the layout's translucent overrides), with staged edits.
+  ownColors() {
+    if (this.themeDraft) return this.themeDraft.colors;
+    return (themes().find((x) => x.name === settings().theme) || {}).colors || theme();
+  }
+
   themeColors() {
-    const own = (themes().find((x) => x.name === settings().theme) || {}).colors || theme();
+    const own = this.ownColors();
     const staged = Object.fromEntries(Object.entries(this.colorDraft).filter(([, v]) => v));
     return { ...theme(), ...own, ...staged };
   }
 
-  glassShown() { return { ...this.glass, ...this.glassDraft }; }
+  glassShown() { return { ...this.glass, ...this.themeReset(), ...this.glassDraft }; }
+
+  // With a theme staged, the glass colors set to a fixed hex go back to their theme-following defaults.
+  themeReset() {
+    if (!this.themeDraft) return {};
+    return Object.fromEntries(GLASS_COLORS.filter((k) => String(this.glass[k] || "").startsWith("#")).map((k) => [k, GLASS_DEFAULT[k]]));
+  }
+
+  // Stages a theme (installed, or a bundled preset); picking the applied one drops the stage.
+  stageTheme(name, cx) {
+    const th = themes().find((x) => x.name === name), p = this.presets.find((x) => x.name === name);
+    if (!th && !p) return this.say(`No theme named ${name}`, "error", cx);
+    if (name === settings().theme) this.themeDraft = null;
+    else {
+      if (Object.keys(this.colorDraft).length) this.say("Color edits dropped: they were for the other theme", "info", cx);
+      this.colorDraft = {};
+      this.themeDraft = { name, preset: th ? null : p, colors: th ? th.colors : presetColors(p.file) };
+    }
+    if (this.glassShown().bg === "bloom") this.scheduleBloom(cx); else delete this.glassDraft.bloom;
+    this.syncControls();
+    cx.notify();
+  }
 
   // A glass color field as hex: a token through the theme, "" through its default.
   glassHex(key, g = this.glassShown(), c = this.themeColors()) {
@@ -355,7 +382,7 @@ export default class ThemeStudio extends View {
 
   changes() {
     const n = (o, skip) => Object.keys(o).filter((k) => k !== skip).length;
-    return { type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
+    return { theme: this.themeDraft ? 1 : 0, type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
   }
 
   // Merges a patch into the glass draft (null drops the draft), dropping keys back at their applied value.
@@ -393,7 +420,7 @@ export default class ThemeStudio extends View {
   }
 
   stageColor(token, hex, cx) {
-    const own = ((themes().find((x) => x.name === settings().theme) || {}).colors || {})[token];
+    const own = this.ownColors()[token];
     if (hex !== null && own && normHex(own) === hex) delete this.colorDraft[token]; else this.colorDraft[token] = hex;
     this.syncControls();
     cx.notify();
@@ -444,7 +471,7 @@ export default class ThemeStudio extends View {
   }
 
   cancelAll(cx) {
-    this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {};
+    this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null;
     this.pickFor = null;
     this.syncControls();
     cx.notify();
@@ -452,15 +479,25 @@ export default class ThemeStudio extends View {
 
   // Everything staged, in one guarded task: settings.json, the theme file, then the layout.
   applyAll(cx) {
-    const type = this.draft, colors = this.colorDraft, glass = this.glassDraft, cursor = this.cursorDraft;
-    if (![type, colors, glass, cursor].some((d) => Object.keys(d).length)) return;
+    const th = this.themeDraft, type = this.draft, colors = this.colorDraft, cursor = this.cursorDraft;
+    const glass = { ...this.themeReset(), ...this.glassDraft };
+    if (!th && ![type, colors, glass, cursor].some((d) => Object.keys(d).length)) return;
     cx.spawn((cx) => this.guard(cx, "Applying", async () => {
       const done = [];
+      if (th) {
+        if (th.preset) await this.installPreset(th.preset);
+        await this.useTheme(cx, th.name);
+        this.themeDraft = null; this.glassTheme = th.name; // the glass below is drawn from the new theme
+        done.push(th.name);
+        if (this.glass.bg === "bloom" && !glass.bloom) this.glass.bloom = ""; // re-rendered from the new theme
+      }
       if (Object.keys(type).length) { await this.writeSettings(type); this.holdLook(type); done.push("type"); }
       if (Object.keys(colors).length) done.push(`colors in ${await this.writeColors(cx, colors)}`);
-      if (Object.keys(glass).length) { await this.writeGlass(cx, glass); done.push("glass"); }
+      // Translucent glass holds hexes of the theme's colors, so a new theme redraws it too.
+      const see = this.glass.chrome < 1 || this.glass.opacity < 1 || this.glass.bg === "bloom";
+      if (Object.keys(glass).length || (th && see && this.personal())) { await this.writeGlass(cx, glass); if (Object.keys(glass).length) done.push("glass"); }
       if (Object.keys(cursor).length) { await this.writeCursor(this.cursorShown()); done.push("cursor"); }
-      this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {};
+      this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null;
       this.pickFor = null; this.syncControls();
       this.say(`Applied ${done.join(", ")}`, "success", cx);
     }));
@@ -713,7 +750,7 @@ export default class ThemeStudio extends View {
         .child(body))
       .child(h_flex().px(14).py(8).gap(10).items_center().justify_between().border_t_1().border_color(t.border)
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(msgColor).child(m ? m.text : ["type", "glass", "colors"].includes(this.tab) ? "Changes wait for Apply." : "Changes save as you make them."))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(msgColor).child(m ? m.text : ["themes", "type", "glass", "colors"].includes(this.tab) ? "Changes wait for Apply." : "Changes save as you make them."))
         .when(!!shared(K.backup), (el) => el.child(this.button("revert", "Revert", t, (_e, cx) => this.revert(cx)))));
   }
 
@@ -731,16 +768,20 @@ export default class ThemeStudio extends View {
         .child(div().text_size(11.5).truncate().child(name))
         .child(div().text_size(10.5).text_color(t.dim).child(c.light ? "light" : "dark")));
     const asCard = (th) => ({ background: th.colors.background, ansi: Array.from({ length: 16 }, (_, i) => th.colors["ansi" + i]), light: th.light });
-    const installed = all.map((th) => card(`th-${th.name}`, th.name, asCard(th), s.theme === th.name, (_e, cx) => this.applyTheme(th.name, cx)));
+    const pick = this.themeDraft ? this.themeDraft.name : s.theme;
+    const installed = all.map((th) => card(`th-${th.name}`, th.name, asCard(th), pick === th.name, (_e, cx) => this.stageTheme(th.name, cx)));
     const extra = this.presets.filter((p) => !all.some((th) => th.name === p.name)).map((p) => {
       const light = contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background);
-      return card(`pre-${p.name}`, p.name, { background: p.file.background, ansi: p.file.ansi, light }, false, (_e, cx) => this.applyPreset(p, cx));
+      return card(`pre-${p.name}`, p.name, { background: p.file.background, ansi: p.file.ansi, light }, pick === p.name, (_e, cx) => this.stageTheme(p.name, cx));
     });
-    return v_flex().gap(16)
+    const fixed = GLASS_COLORS.some((k) => String(this.glass[k] || "").startsWith("#"));
+    const body = v_flex().gap(16)
       .child(this.section("Your themes", t, h_flex().flex_wrap().gap(8).children(installed),
-        `Picking a ${s.dark ? "dark" : "light"} theme sets what Herdr shows in ${s.dark ? "dark" : "light"} mode. Now: dark ${s.theme_dark}, light ${s.theme_light}.`))
+        `Picking a ${s.dark ? "dark" : "light"} theme sets what Herdr shows in ${s.dark ? "dark" : "light"} mode. Now: dark ${s.theme_dark}, light ${s.theme_light}.` +
+        (fixed ? " Applying a theme also puts your custom glass colors back to the theme's own." : "")))
       .when(extra.length > 0, (el) => el.child(this.section("More themes", t, h_flex().flex_wrap().gap(8).children(extra),
-        "Copied into themes/ when you pick one, so Herdr's Settings lists them too.")));
+        "Copied into themes/ when you apply one, so Herdr's Settings lists them too.")));
+    return { head: v_flex().gap(8).child(this.windowPreview(t)).child(this.applyBar(t)), body };
   }
 
   colorsTab(t, s, cx) {
@@ -890,8 +931,8 @@ export default class ThemeStudio extends View {
   // "N changes not applied" with Cancel and Apply, under a tab's pinned preview. One Apply writes
   // what every tab has staged, so the line names the tabs that have changes.
   applyBar(t) {
-    const c = this.changes(), n = c.type + c.colors + c.glass;
-    const where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass]].filter(([, k]) => k).map(([w]) => w).join(", ");
+    const c = this.changes(), n = c.theme + c.type + c.colors + c.glass;
+    const where = [["Themes", c.theme], ["Colors", c.colors], ["Type", c.type], ["Glass", c.glass]].filter(([, k]) => k).map(([w]) => w).join(", ");
     return h_flex().gap(6).items_center()
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(n ? t.foreground : t.dim)
         .child(n ? `${n} change${n > 1 ? "s" : ""} not applied (${where})` : "Pick below; nothing changes until Apply."))

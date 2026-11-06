@@ -42,13 +42,13 @@ open Studio window keeps its old build until you close and reopen it.
 
 | Tab | Writes | Notes |
 |---|---|---|
-| Themes | `app.theme`; presets copied to `themes/<name>.json` | Picking a dark theme sets dark mode's theme, a light one light mode's. 12 presets ship in `presets/` (sources in `presets/SOURCES.md`). |
+| Themes | `app.theme`; presets copied to `themes/<name>.json` | Picking a dark theme sets dark mode's theme, a light one light mode's. Applying one also puts glass colors you set by hex (tints, glows, gradient, behind panes) back to the theme's own, so the whole window follows it. 12 presets ship in `presets/` (sources in `presets/SOURCES.md`). |
 | Colors | `themes/<name>.json`; Behind panes goes on the layout | Every theme color (the theme's own, not Glass's see-through versions), with WCAG contrast badges on text tokens. Click one to edit it with the color picker. Also the color behind panes, and the cursor: color (theme) plus shape (Block, Underline, Bar) and blink. Editing a theme the Studio didn't make forks it to `<name>-custom` first. Herdr only rereads a theme file when it's picked, so the Studio re-picks after each write. |
 | Type | `settings.json` (`font`, `font_size`, `ui_font`, `font_ligatures`, `minimum_contrast`) | A sample terminal shows picks at once (font, size, ligatures, contrast lift). Herdr rereads `settings.json` only every few seconds (up to about 10), so on your own layout copy fonts and size also go on the layout for 15 s and show at once. Fonts render in their own face. "Open fonts folder" is for `.ttf`/`.otf` files Herdr loads without installing them system-wide. |
 | Glass | the shown layout, through `layout.set` | Herdr's own layouts refuse these fields, so the tab first makes your copy (`<layout>-studio`). Background: theme, a gradient in two colors you pick, Bloom (a base color with three soft glows, rendered into a picture), frosted wallpaper or image; the glass surfaces' opacity and tint color; pane radius, the margin around the panes, and the gap between them. |
 | Library | shared state, `themes/` | Saved looks (themes, fonts and layout together); theme import from iTerm2 (`.itermcolors`), Ghostty, kitty, Alacritty or Herdr JSON by paste, clipboard or dropping the file; copy theme JSON. |
 
-**Change, then Apply:** Type, Colors and Glass all stage their changes. Colors and Glass show
+**Change, then Apply:** Themes, Type, Colors and Glass all stage their changes. Themes, Colors and Glass show
 them in a small mock window; one **Apply** writes everything staged on any tab, and Cancel drops it.
 
 **Revert** (bottom right, after the first change) restores `settings.json`, the layout and the
@@ -93,8 +93,8 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
 with the Studio open:
 
-`tab=<themes|colors|type|glass|library>` · `theme=<name>` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
-staged until `apply` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
+`tab=<themes|colors|type|glass|library>` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
+staged until `apply` (`cancel` drops them): `theme=<name>` · `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `glass-color=<from|to|tintChrome|tintPane|bloomBase|glowA|glowB|glowC>:<hex|>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `button=on|off` · `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `look=<name>` ·
