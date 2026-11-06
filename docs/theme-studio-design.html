@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herdr Theme Studio Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout idea: a design spec in one column, with a live mock of the Studio window over a mock Herdr window as the centrepiece. */
+  --ink: #1b2027;
+  --paper: #f4f5f2;
+  --panel: #ffffff;
+  --line: #d9ddd6;
+  --muted: #5b6470;
+  --accent: #0f7c86;
+  --ok: #2f7d3b;
+  --warn: #9a6a00;
+  --no: #b2402f;
+  --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e4e7ea; --paper: #14171b; --panel: #1b1f24; --line: #2d333a;
+    --muted: #9aa3ad; --accent: #4cc3cc; --ok: #6cc47a; --warn: #e0b34c; --no: #ef7d6a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #e4e7ea; --paper: #14171b; --panel: #1b1f24; --line: #2d333a;
+  --muted: #9aa3ad; --accent: #4cc3cc; --ok: #6cc47a; --warn: #e0b34c; --no: #ef7d6a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 16px/1.6 var(--body); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 48px 20px 80px; display: grid; gap: 56px; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: 44px; letter-spacing: -0.02em; }
+h2 { font-size: 28px; letter-spacing: -0.01em; }
+h3 { font-size: 18px; }
+p { margin: 0; }
+section { display: grid; gap: 18px; }
+.lede { font-size: 19px; color: var(--muted); max-width: 64ch; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+code { background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; color: var(--muted); }
+.callout { border-left: 3px solid var(--accent); background: var(--panel); padding: 14px 18px; border-radius: 0 8px 8px 0; max-width: 72ch; }
+
+/* tables */
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--body); font-weight: 600; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.pill.yes { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.pill.check { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.pill.no { background: color-mix(in srgb, var(--no) 16%, transparent); color: var(--no); }
+
+/* tiers */
+.tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.tier { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; align-content: start; }
+.tier .n { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+/* ---------- the mock ---------- */
+.stage { display: grid; gap: 12px; }
+.mockctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+.mock {
+  --m-bg: #1d2024; --m-canvas: #16181b; --m-chrome: #191b1e; --m-surface: #23262b; --m-border: #30343a;
+  --m-fg: #d7dae0; --m-muted: #8b919a; --m-accent: #a7b4c6; --m-acc-fg: #121417;
+  --a1: #e06c75; --a2: #98c379; --a3: #e5c07b; --a4: #61afef; --a5: #c678dd; --a6: #56b6c2;
+  --op: 0.82; --chrome-op: 0.9; --radius: 8px; --gap: 6px;
+  --tfont: "JetBrains Mono", monospace; --tsize: 12.5px; --ufont: "IBM Plex Sans", sans-serif;
+  position: relative; border-radius: 12px; overflow: hidden; height: 600px;
+  border: 1px solid rgba(0,0,0,0.35); box-shadow: 0 24px 60px -24px rgba(0,0,0,0.5);
+  font-family: var(--ufont); color: var(--m-fg); isolation: isolate;
+}
+.wall { position: absolute; inset: -40px; z-index: -1; background: var(--m-canvas); transition: filter .25s; }
+.mock[data-bg="gradient"] .wall { background: linear-gradient(165deg, var(--m-accent), var(--m-canvas) 70%); filter: none; }
+.mock[data-bg="wallpaper"] .wall, .mock[data-bg="frost"] .wall {
+  background:
+    radial-gradient(circle at 18% 30%, #ff9a5a 0 14%, transparent 15%),
+    radial-gradient(circle at 70% 22%, #ffd36b 0 9%, transparent 10%),
+    radial-gradient(circle at 62% 78%, #3fb6a8 0 20%, transparent 21%),
+    radial-gradient(circle at 30% 85%, #6a5cff 0 16%, transparent 17%),
+    linear-gradient(160deg, #2b3a67, #0e1630);
+}
+.mock[data-bg="frost"] .wall { filter: blur(28px) saturate(1.2) brightness(0.8); }
+.win { position: absolute; inset: 0; display: grid; grid-template-columns: 190px 1fr; }
+.side { background: color-mix(in srgb, var(--m-chrome) calc(var(--chrome-op) * 100%), transparent); border-right: 1px solid var(--m-border); padding: 34px 10px 10px; display: grid; gap: 4px; align-content: start; font-size: 12.5px; }
+.lights { position: absolute; top: 11px; left: 12px; display: flex; gap: 7px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.side .h { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--m-muted); margin: 8px 6px 2px; }
+.side .it { padding: 5px 8px; border-radius: 6px; display: flex; gap: 8px; align-items: center; color: var(--m-muted); }
+.side .it.on { background: color-mix(in srgb, var(--m-fg) 9%, transparent); color: var(--m-fg); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.work { display: grid; grid-template-rows: 32px 1fr; min-width: 0; }
+.tabs { background: color-mix(in srgb, var(--m-chrome) calc(var(--chrome-op) * 100%), transparent); border-bottom: 1px solid var(--m-border); display: flex; gap: 6px; align-items: center; padding: 0 10px; font-size: 12px; }
+.tabs span { padding: 3px 10px; border-radius: 99px; color: var(--m-muted); }
+.tabs span.on { background: var(--m-surface); color: var(--m-fg); }
+.panes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); padding: var(--gap); min-height: 0; }
+.pane { background: color-mix(in srgb, var(--m-bg) calc(var(--op) * 100%), transparent); border: 1px solid var(--m-border); border-radius: var(--radius); padding: 10px 12px; font: var(--tsize)/1.5 var(--tfont); overflow: hidden; white-space: pre; }
+.pane.focus { border-color: var(--m-accent); }
+.c1 { color: var(--a1); } .c2 { color: var(--a2); } .c3 { color: var(--a3); } .c4 { color: var(--a4); } .c5 { color: var(--a5); } .c6 { color: var(--a6); } .cm { color: var(--m-muted); }
+
+/* the studio window */
+.studio { position: absolute; right: 22px; top: 52px; width: 400px; max-width: calc(100% - 44px); bottom: 22px;
+  background: var(--m-surface); border: 1px solid var(--m-border); border-radius: 10px; box-shadow: 0 18px 50px -12px rgba(0,0,0,.6);
+  display: grid; grid-template-rows: auto auto 1fr auto; font-size: 12.5px; overflow: hidden; }
+.st-title { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--m-border); font-weight: 600; }
+.st-title small { font-weight: 400; color: var(--m-muted); }
+.st-tabs { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--m-border); flex-wrap: wrap; }
+.st-tabs button { all: unset; cursor: pointer; padding: 4px 9px; border-radius: 6px; color: var(--m-muted); }
+.st-tabs button[aria-selected="true"] { background: var(--m-accent); color: var(--m-acc-fg); }
+.st-tabs button:focus-visible, .chip:focus-visible, .sw:focus-visible { outline: 2px solid var(--m-accent); outline-offset: 2px; }
+.st-body { overflow: auto; padding: 12px; display: grid; gap: 12px; align-content: start; }
+.st-body[hidden] { display: none; }
+.st-foot { display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--m-border); color: var(--m-muted); align-items: center; }
+.st-foot b { color: var(--m-fg); font-weight: 500; }
+.grp { display: grid; gap: 6px; }
+.grp > label, .grp > .lbl { color: var(--m-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.row { display: flex; align-items: center; gap: 10px; }
+.row input[type=range] { flex: 1; accent-color: var(--m-accent); }
+.row output { font-family: var(--mono); min-width: 38px; text-align: right; color: var(--m-fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { all: unset; cursor: pointer; border: 1px solid var(--m-border); padding: 4px 9px; border-radius: 6px; color: var(--m-fg); }
+.chip[aria-pressed="true"] { border-color: var(--m-accent); box-shadow: inset 0 0 0 1px var(--m-accent); }
+.themes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tcard { all: unset; cursor: pointer; border: 1px solid var(--m-border); border-radius: 8px; overflow: hidden; display: grid; }
+.tcard[aria-pressed="true"] { border-color: var(--m-accent); box-shadow: 0 0 0 1px var(--m-accent); }
+.tcard:focus-visible { outline: 2px solid var(--m-accent); outline-offset: 2px; }
+.tprev { height: 44px; display: flex; gap: 3px; padding: 7px; align-items: flex-end; }
+.tprev i { flex: 1; border-radius: 2px; }
+.tname { padding: 5px 8px; font-size: 11.5px; display: flex; justify-content: space-between; background: var(--m-bg); }
+.tname em { font-style: normal; color: var(--m-muted); }
+.tok { display: grid; grid-template-columns: 18px 1fr auto auto; gap: 8px; align-items: center; padding: 3px 0; }
+.sw { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(127,127,127,.4); }
+.tok .hex { font-family: var(--mono); color: var(--m-muted); }
+.ratio { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 99px; }
+.ratio.good { background: rgba(80,180,100,.18); color: #7fd18e; }
+.ratio.low { background: rgba(230,150,40,.2); color: #f0b45a; }
+.ansi { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.ansi i { height: 18px; border-radius: 3px; }
+select { font: inherit; background: var(--m-bg); color: var(--m-fg); border: 1px solid var(--m-border); border-radius: 6px; padding: 4px 6px; }
+.fontrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.sample { background: var(--m-bg); border: 1px solid var(--m-border); border-radius: 6px; padding: 8px 10px; font: var(--tsize)/1.5 var(--tfont); }
+.note { color: var(--m-muted); font-size: 11.5px; line-height: 1.45; }
+.mockcap { font-size: 14px; color: var(--muted); max-width: 72ch; }
+
+/* plan */
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; font-size: 15px; }
+.box .mono { color: var(--accent); font-size: 13px; }
+ol.phases { margin: 0; padding-left: 22px; display: grid; gap: 10px; max-width: 72ch; }
+ul { margin: 0; padding-left: 22px; display: grid; gap: 6px; max-width: 72ch; }
+pre { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font: 13px/1.55 var(--mono); }
+.sources { font-size: 14px; color: var(--muted); }
+@media (max-width: 720px) {
+  h1 { font-size: 34px; }
+  .mock { height: 820px; }
+  .win { grid-template-columns: 1fr; grid-template-rows: 0 1fr; }
+  .side { display: none; }
+  .panes { grid-template-columns: 1fr; }
+  .studio { top: auto; height: 470px; left: 12px; right: 12px; width: auto; max-width: none; bottom: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .wall { transition: none; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<header style="display:grid;gap:14px">
+  <div class="meta"><span>Built 5 Nov 2026: see README and docs/PLAN.md for what changed</span><span>Herdr app 0.1.13 · macOS</span><span>5 Nov 2026</span></div>
+  <h1>Herdr Theme Studio</h1>
+  <p class="lede">A Herdr app mod that turns the app's scattered look settings into one window: theme gallery, every color token, fonts, glass and pane frames. Every change shows in the real window as you make it, because the Studio writes the same files Herdr already redraws from.</p>
+</header>
+
+<section class="prose" style="max-width:none">
+  <h2>What the research found</h2>
+  <p class="prose">Two things changed the plan. First, the desktop app has its own mod system, separate from the TUI's <code>herdr-plugin.toml</code> plugins. Mods are JavaScript that describes native GPUI elements. There is no HTML or CSS, so a theme can't be a stylesheet. Second, Herdr already has a complete look system underneath. What's missing is a way to drive it. Herdr's own Settings → Look screen offers only layout and theme picks. Everything else has to be edited by hand in JSON.</p>
+  <div class="tablebox">
+    <table>
+      <thead><tr><th>Knob</th><th>Where Herdr reads it</th><th>From a mod</th></tr></thead>
+      <tbody>
+        <tr><td>Terminal palette: background, foreground, selection, cursor, 16 ANSI</td><td><code>themes/&lt;name&gt;.json</code></td><td><span class="pill yes">Live</span></td></tr>
+        <tr><td>All 26 panel tokens: canvas, chrome, surface, popover, raised, hover, selected, border, input, ring, muted, dim, accent, solid, status colors…</td><td><code>colors</code> in a theme file or <code>settings.json</code></td><td><span class="pill yes">Live</span></td></tr>
+        <tr><td>Separate light and dark themes that follow the system</td><td><code>"theme": {"light","dark"}</code>, <code>appearance</code></td><td><span class="pill yes">Live</span></td></tr>
+        <tr><td>Terminal font and size, UI font, ligatures, minimum contrast</td><td><code>settings.json</code>; <code>fonts()</code> lists installed families</td><td><span class="pill yes">Live</span></td></tr>
+        <tr><td>Your own font files</td><td><code>.ttf</code>/<code>.otf</code> in the home's <code>fonts/</code></td><td><span class="pill yes">On next look change</span></td></tr>
+        <tr><td>Terminal opacity (0–1)</td><td>Layout root only, not settings</td><td><span class="pill yes">Via <code>layout.set</code></span></td></tr>
+        <tr><td>Window background: color, gradient with angle, image (cover / contain)</td><td>Layout node <code>background</code></td><td><span class="pill yes">Via <code>layout.set</code></span></td></tr>
+        <tr><td>Pane frames: gap, radius, border, focus border, shadow</td><td>The layout's tab block <code>pane</code></td><td><span class="pill yes">Via <code>layout.set</code></span></td></tr>
+        <tr><td>Translucent chrome (sidebar and tab bar showing the background through)</td><td><code>#rrggbbaa</code> color overrides</td><td><span class="pill check">Accepted; whether it composites needs a test</span></td></tr>
+        <tr><td>See-through window, live blur of the desktop and windows behind it</td><td>Not exposed</td><td><span class="pill no">Not possible from a mod</span></td></tr>
+        <tr><td>How terminal glyphs and the cursor are drawn</td><td>Inside the terminal renderer</td><td><span class="pill no">Off limits by design</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="callout">On window transparency: GPUI, the UI toolkit Herdr is built on, has a blurred-window mode, and the macOS pieces for it are linked into the Herdr binary. Herdr just has no setting that turns it on. A single root field would expose it, something like <code>"window_background": "blurred"</code>. That needs a request to the Herdr maintainers. The Studio can't add it. One is already open: <a href="https://github.com/herdrdev/herdr-app/issues/190">herdr-app#190</a> proposes <code>window_opacity</code> and <code>window_blur</code> in settings.json, and its author has a draft PR. It also warns that alpha on stacked layout backgrounds adds up to nearly solid, which is why the chrome-opacity slider is in doubt.</p>
+</section>
+
+<section>
+  <h2>Transparency, in three tiers</h2>
+  <div class="tiers">
+    <div class="tier"><span class="n">TIER 1 · REAL</span><h3>Tinted glass</h3><p>Terminal opacity below 1 lets the window background show through terminal text: a gradient made from the theme, or any image. Translucent pane frames sit on top. This works everywhere Herdr runs.</p></div>
+    <div class="tier"><span class="n">TIER 2 · ILLUSION</span><h3>Frosted wallpaper</h3><p>The Studio reads the current desktop picture, then blurs and dims it with Core Image through <code>osascript -l JavaScript</code>, which ships with macOS. It saves the result as the window background. It reads as macOS vibrancy, but it shows only your wallpaper, never the windows behind Herdr, and it doesn't shift as you move the window. It rechecks the wallpaper every minute. macOS only; elsewhere this falls back to tier 1.</p></div>
+    <div class="tier"><span class="n">TIER 3 · NEEDS HERDR</span><h3>True vibrancy</h3><p>A real see-through window, blurring whatever is behind it. Herdr would have to expose GPUI's blurred-window mode. The Studio keeps a disabled switch for it that turns on if a future Herdr version adds the field.</p></div>
+  </div>
+</section>
+
+<section class="stage">
+  <h2>How it looks</h2>
+  <p class="mockcap">A working mock: the Studio as a floating, draggable Herdr window over a normal Herdr layout. Switch themes, drag the glass sliders and change the background to see what each knob does. The real thing draws with native GPUI, so expect the same layout with Herdr's own type and spacing.</p>
+
+  <div class="mock" id="mock" data-bg="frost">
+    <div class="wall"></div>
+    <div class="win">
+      <aside class="side">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="h">This Mac</div>
+        <div class="it on"><span class="dot" style="background:var(--a2)"></span>herdr-app-theming</div>
+        <div class="it"><span class="dot" style="background:var(--m-muted)"></span>bear-poppa-studio</div>
+        <div class="it"><span class="dot" style="background:var(--m-muted)"></span>aegis</div>
+        <div class="h">Agents</div>
+        <div class="it"><span class="dot" style="background:var(--a3)"></span>claude · working</div>
+        <div class="it"><span class="dot" style="background:var(--a1)"></span>codex · blocked</div>
+        <div class="it"><span class="dot" style="background:var(--a4)"></span>claude · done</div>
+      </aside>
+      <div class="work">
+        <div class="tabs"><span class="on">studio</span><span>shell</span><span>logs</span></div>
+        <div class="panes">
+<div class="pane focus"><span class="c2">jim@mbp</span> <span class="c4">~/git/repos/herdr-app-theming</span>
+<span class="c5">❯</span> herdr-app check mods/theme-studio
+<span class="c2">✓</span> theme-studio loaded, 1 render, 0 errors
+<span class="c5">❯</span> git status --short
+<span class="c3"> M</span> mods/theme-studio/main.js
+<span class="c1">?? </span>mods/theme-studio/presets/rose-pine.json
+<span class="c5">❯</span> <span class="cm">_</span></div>
+<div class="pane"><span class="cm">// mods/theme-studio/glass.js</span>
+<span class="c5">export function</span> <span class="c4">applyGlass</span>(look) {
+  <span class="c5">return</span> run(<span class="c2">"layout.set"</span>, {
+    layout: { ...layout(),
+      terminal_opacity: look.<span class="c6">opacity</span>,
+      background: look.<span class="c6">bg</span> } });
+}
+<span class="cm">// 120 ms debounce on sliders</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="studio" role="region" aria-label="Theme Studio mock">
+      <div class="st-title"><span>Theme Studio</span><small id="stName">Graphite · dark</small></div>
+      <div class="st-tabs" role="tablist" aria-label="Studio sections">
+        <button role="tab" id="tab-themes" aria-selected="false" aria-controls="p-themes">Themes</button>
+        <button role="tab" id="tab-colors" aria-selected="false" aria-controls="p-colors">Colors</button>
+        <button role="tab" id="tab-type" aria-selected="false" aria-controls="p-type">Type</button>
+        <button role="tab" id="tab-glass" aria-selected="true" aria-controls="p-glass">Glass</button>
+        <button role="tab" id="tab-library" aria-selected="false" aria-controls="p-library">Library</button>
+      </div>
+
+      <div class="st-body" id="p-themes" role="tabpanel" aria-labelledby="tab-themes" hidden>
+        <div class="grp"><span class="lbl">Dark theme · used when the system is dark</span><div class="themes" id="themeGrid"></div></div>
+        <div class="grp"><span class="lbl">Light theme</span><div class="chips"><button class="chip" aria-pressed="true">Paper</button><button class="chip" aria-pressed="false">Catppuccin Latte</button><button class="chip" aria-pressed="false">One Light</button></div></div>
+        <p class="note">Picking a card writes <code>settings.json → theme</code>. Shipped presets are copied into <code>themes/</code> the first time they're used, so Herdr's own Settings → Look lists them too.</p>
+      </div>
+
+      <div class="st-body" id="p-colors" role="tabpanel" aria-labelledby="tab-colors" hidden>
+        <div class="grp"><span class="lbl">Text on background · contrast</span><div id="tokText"></div></div>
+        <div class="grp"><span class="lbl">Surfaces</span><div id="tokSurf"></div></div>
+        <div class="grp"><span class="lbl">Terminal ANSI 0–7</span><div class="ansi" id="ansi"></div></div>
+        <p class="note">Click a swatch for a picker with a hex field. Changed tokens go into the theme's <code>colors</code> block; untouched ones stay derived by Herdr, so editing three colors doesn't freeze the other twenty-three. Ratios under 4.5:1 (3:1 for dim text) are flagged.</p>
+      </div>
+
+      <div class="st-body" id="p-type" role="tabpanel" aria-labelledby="tab-type" hidden>
+        <div class="grp"><label for="tfont">Terminal font</label>
+          <div class="fontrow"><select id="tfont"><option value='"JetBrains Mono", monospace'>JetBrains Mono</option><option value='Menlo, monospace'>Menlo</option><option value='"Courier New", monospace'>Courier New</option></select><span class="note">from fonts()</span></div></div>
+        <div class="grp"><label for="tsize">Terminal size</label><div class="row"><input type="range" id="tsize" min="10" max="18" step="0.5" value="12.5"><output id="tsizeO">12.5</output></div></div>
+        <div class="grp"><label for="ufont">UI font</label><select id="ufont"><option value='"IBM Plex Sans", sans-serif'>Geist (shipped)</option><option value='Georgia, serif'>Georgia</option><option value='"Bricolage Grotesque", sans-serif'>Bricolage Grotesque</option></select></div>
+        <div class="sample" id="sample">fn main() -&gt; Result&lt;()&gt; { a != b &amp;&amp; c =&gt; d }</div>
+        <div class="chips"><button class="chip" aria-pressed="false">Ligatures</button><button class="chip" aria-pressed="true">Min contrast 1.0</button><button class="chip" aria-pressed="false">Add font file…</button></div>
+      </div>
+
+      <div class="st-body" id="p-glass" role="tabpanel" aria-labelledby="tab-glass">
+        <div class="grp"><span class="lbl">Window background</span>
+          <div class="chips" id="bgChips">
+            <button class="chip" data-bg="solid" aria-pressed="false">Solid</button>
+            <button class="chip" data-bg="gradient" aria-pressed="false">Gradient</button>
+            <button class="chip" data-bg="wallpaper" aria-pressed="false">Image</button>
+            <button class="chip" data-bg="frost" aria-pressed="true">Frosted wallpaper</button>
+          </div></div>
+        <div class="grp"><label for="op">Terminal opacity</label><div class="row"><input type="range" id="op" min="0.3" max="1" step="0.01" value="0.82"><output id="opO">0.82</output></div></div>
+        <div class="grp"><label for="cop">Chrome opacity · sidebar and tab bar</label><div class="row"><input type="range" id="cop" min="0.3" max="1" step="0.01" value="0.9"><output id="copO">0.90</output></div><span class="note">Pending the alpha-compositing test. If it fails, this slider is left out.</span></div>
+        <div class="grp"><label for="rad">Pane corner radius</label><div class="row"><input type="range" id="rad" min="0" max="16" step="1" value="8"><output id="radO">8</output></div></div>
+        <div class="grp"><label for="gap">Pane gap</label><div class="row"><input type="range" id="gap" min="0" max="16" step="1" value="6"><output id="gapO">6</output></div></div>
+        <div class="grp"><span class="lbl">True window blur</span><div class="chips"><button class="chip" aria-pressed="false" aria-disabled="true" style="opacity:.5;cursor:not-allowed">Needs Herdr support</button></div></div>
+      </div>
+
+      <div class="st-body" id="p-library" role="tabpanel" aria-labelledby="tab-library" hidden>
+        <div class="grp"><span class="lbl">Saved looks</span>
+          <div class="chips"><button class="chip" aria-pressed="true">Night shift</button><button class="chip" aria-pressed="false">Presenting</button><button class="chip" aria-pressed="false">+ Save current</button></div></div>
+        <div class="grp"><span class="lbl">Import a theme</span><div class="sample" style="white-space:pre;font-size:11px">palette = 0=#15161e
+palette = 1=#f7768e
+background = #1a1b26
+foreground = #c0caf5</div><span class="note">Paste a Ghostty, kitty or Alacritty theme. Converted to a Herdr theme file.</span></div>
+        <div class="chips"><button class="chip" aria-pressed="false">Copy theme JSON</button><button class="chip" aria-pressed="false">Export for herdr.dev</button><button class="chip" aria-pressed="false">Revert to before Studio</button></div>
+      </div>
+
+      <div class="st-foot"><span>Saved to <b>settings.json</b>, <b>layouts/main</b></span><span>⌃⇧Y</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <div class="flow">
+    <div class="box"><span class="mono">themes/studio-*.json</span><strong>Palettes</strong><p>One file per theme the Studio makes or imports. It never edits Herdr's shipped theme files, which Herdr would move aside on the next start.</p></div>
+    <div class="box"><span class="mono">settings.json</span><strong>Theme pick, fonts, overrides</strong><p>Merged key by key, never overwritten. Writes go through <code>writeTextFile(path, text, expected)</code>, so an edit you make by hand at the same moment isn't lost.</p></div>
+    <div class="box"><span class="mono">layout.set</span><strong>Glass and frames</strong><p>Opacity, background and pane frames live only on layouts. Herdr's own layouts refuse all but the background, so the Glass tab first makes your own copy of the layout. The translucency sits on the rounded pane card, not the terminal, so corners stay clean.</p></div>
+    <div class="box"><span class="mono">backgrounds/studio-frost.jpg</span><strong>Frosted wallpaper</strong><p>Made by one Core Image call through <code>exec("osascript", …)</code>. Rebuilt only when the wallpaper path changes.</p></div>
+  </div>
+  <ul>
+    <li><strong>Opening it:</strong> one key (⌃⇧Y proposed, to check against <code>keys.json</code>) and a palette entry, both running <code>mod.open</code>. It opens as a kept, draggable <code>kind: "window"</code> overlay, so it stays put while you look at the real window.</li>
+    <li><strong>Live preview:</strong> the Studio's own swatches update immediately. File writes are debounced to 120 ms while a slider is dragged, and the app redraws within a second.</li>
+    <li><strong>Safety:</strong> before its first write, the Studio snapshots <code>settings.json</code> and the layout's look to <code>data/theme-studio/</code>. Revert restores that snapshot. After each write it reads <code>settings.error</code> / <code>layout.error</code> and shows any problem as a toast. Herdr's ⌃⌥⇧Esc reset still works as the last resort.</li>
+    <li><strong>Presets:</strong> about a dozen permissively licensed palettes ship inside the mod: Tokyo Night, Catppuccin Mocha and Latte, Gruvbox, Nord, Rosé Pine, Dracula, Kanagawa, Everforest, Solarized, One Light. They're copied into <code>themes/</code> when first used.</li>
+    <li><strong>Sharing:</strong> Export writes a folder in the herdr.dev/mods format, with a <code>RECIPE.md</code> and a <code>preview.png</code> taken with <code>herdr-app shot</code>.</li>
+  </ul>
+  <pre>~/.config/herdr-app/mods/theme-studio/
+  mod.json          { "place": "none", "focusable": true }
+  main.js           window, tabs, routing
+  themes.js colors.js type.js glass.js library.js
+  lib.js            pure: contrast ratio, Ghostty/kitty/Alacritty parsers, settings merge
+  lib.test.mjs      node assert check for lib.js
+  frost.js          the osascript Core Image blur
+  presets/*.json</pre>
+</section>
+
+<section>
+  <h2>Build plan</h2>
+  <ol class="phases">
+    <li><strong>Spike, half a day.</strong> Prove three open questions before writing UI: does <code>layout.set</code> on the shipped <code>main</code> layout accept <code>terminal_opacity</code>, <code>background</code> and <code>pane</code>; do <code>#rrggbbaa</code> chrome colors let a background image show through the sidebar; does the osascript Core Image blur run unprompted on this Mac?</li>
+    <li><strong>Themes, Colors, Type.</strong> The gallery, the token editor with contrast checks, font pickers. The <code>lib.js</code> self-check passes and <code>herdr-app check</code> passes.</li>
+    <li><strong>Glass.</strong> Opacity, backgrounds, frosted wallpaper and pane frames, plus snapshot and Revert.</li>
+    <li><strong>Library.</strong> Saved looks, import from Ghostty, kitty and Alacritty, export for herdr.dev.</li>
+  </ol>
+  <p class="prose"><strong>Left out:</strong> theming the herdr TUI, which uses a different config and plugin system and could reuse the same palettes later. iTerm <code>.itermcolors</code> import (plist), until someone asks for it. Per-block looks, which Herdr says are coming but aren't there today.</p>
+</section>
+
+<section class="prose">
+  <h2>Decided</h2>
+  <ul>
+    <li>Called <em>Theme Studio</em>, opened with ⌃⇧Y, which isn't bound in keys.json.</li>
+    <li>Frosted wallpaper ships in v1, labelled wallpaper-only.</li>
+    <li>Desktop only, with no sync to the TUI.</li>
+    <li>Real window blur: add our use case to herdr-app#190 instead of opening a duplicate.</li>
+  </ul>
+</section>
+
+<section class="sources">
+  <h3>Sources</h3>
+  <p>The installed Herdr app's own manual and types: <code>~/.config/herdr-app/AGENTS.md</code>, <code>herdr.d.ts</code>, <code>gpui-kit.d.ts</code>; <code>herdr-app commands</code>; the app binary. <a href="https://herdr.dev/docs/preview/plugins/">herdr.dev plugin docs</a> (TUI plugins). <a href="https://dev.to/akashjana/how-to-change-your-herdr-theme-37e5">zenbones-herdr theme pack</a>. <a href="https://github.com/herdrdev/herdr/discussions/3071">Discussion #3071: external theme files</a>.</p>
+</section>
+
+</main>
+<script>
+(function () {
+  const P = {
+    graphite: { name: "Graphite", bg:"#1d2024", canvas:"#16181b", chrome:"#191b1e", surface:"#23262b", border:"#30343a", fg:"#d7dae0", muted:"#8b919a", accent:"#a7b4c6", accfg:"#121417", a:["#e06c75","#98c379","#e5c07b","#61afef","#c678dd","#56b6c2"] },
+    tokyo:    { name: "Tokyo Night", bg:"#1a1b26", canvas:"#13141c", chrome:"#16161e", surface:"#202233", border:"#2a2e45", fg:"#c0caf5", muted:"#7982a9", accent:"#7aa2f7", accfg:"#15161e", a:["#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff"] },
+    rose:     { name: "Rosé Pine", bg:"#191724", canvas:"#12101b", chrome:"#1f1d2e", surface:"#26233a", border:"#353148", fg:"#e0def4", muted:"#908caa", accent:"#ebbcba", accfg:"#191724", a:["#eb6f92","#31748f","#f6c177","#9ccfd8","#c4a7e7","#ebbcba"] },
+    gruvbox:  { name: "Gruvbox", bg:"#282828", canvas:"#1d2021", chrome:"#232323", surface:"#32302f", border:"#45403d", fg:"#ebdbb2", muted:"#a89984", accent:"#d79921", accfg:"#1d2021", a:["#fb4934","#b8bb26","#fabd2f","#83a598","#d3869b","#8ec07c"] },
+    latte:    { name: "Catppuccin Latte", light:true, bg:"#eff1f5", canvas:"#e6e9ef", chrome:"#dce0e8", surface:"#ffffff", border:"#bcc0cc", fg:"#4c4f69", muted:"#6c6f85", accent:"#1e66f5", accfg:"#ffffff", a:["#d20f39","#40a02b","#df8e1d","#1e66f5","#8839ef","#179299"] },
+    nord:     { name: "Nord", bg:"#2e3440", canvas:"#272c36", chrome:"#2a2f3a", surface:"#3b4252", border:"#434c5e", fg:"#d8dee9", muted:"#9aa3b5", accent:"#88c0d0", accfg:"#2e3440", a:["#bf616a","#a3be8c","#ebcb8b","#81a1c1","#b48ead","#88c0d0"] }
+  };
+  const mock = document.getElementById("mock");
+  let cur = "graphite";
+
+  function lum(hex) {
+    const c = [1,3,5].map(i => parseInt(hex.slice(i, i+2), 16) / 255).map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+    return 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2];
+  }
+  function ratio(a, b) { const x = lum(a), y = lum(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05); }
+  function tok(name, hex, against, min) {
+    const r = against ? ratio(hex, against) : null;
+    const badge = r ? `<span class="ratio ${r >= min ? "good" : "low"}">${r.toFixed(1)}:1</span>` : "<span></span>";
+    return `<div class="tok"><button class="sw" style="background:${hex}" aria-label="Edit ${name}"></button><span>${name}</span><span class="hex">${hex}</span>${badge}</div>`;
+  }
+  function apply(key) {
+    cur = key; const t = P[key], s = mock.style;
+    s.setProperty("--m-bg", t.bg); s.setProperty("--m-canvas", t.canvas); s.setProperty("--m-chrome", t.chrome);
+    s.setProperty("--m-surface", t.surface); s.setProperty("--m-border", t.border); s.setProperty("--m-fg", t.fg);
+    s.setProperty("--m-muted", t.muted); s.setProperty("--m-accent", t.accent); s.setProperty("--m-acc-fg", t.accfg);
+    t.a.forEach((c, i) => s.setProperty("--a" + (i+1), c));
+    document.getElementById("stName").textContent = t.name + (t.light ? " · light" : " · dark");
+    document.getElementById("tokText").innerHTML = tok("foreground", t.fg, t.bg, 4.5) + tok("muted", t.muted, t.bg, 4.5) + tok("accent", t.accent, t.bg, 3);
+    document.getElementById("tokSurf").innerHTML = tok("background", t.bg) + tok("canvas", t.canvas) + tok("chrome", t.chrome) + tok("surface", t.surface) + tok("border", t.border);
+    document.getElementById("ansi").innerHTML = [t.canvas].concat(t.a, [t.fg]).map(c => `<i style="background:${c}"></i>`).join("");
+    document.querySelectorAll(".tcard").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === key));
+  }
+  document.getElementById("themeGrid").innerHTML = Object.entries(P).map(([k, t]) =>
+    `<button class="tcard" data-k="${k}" aria-pressed="false"><div class="tprev" style="background:${t.bg}">${t.a.map(c => `<i style="background:${c};height:${10 + (c.charCodeAt(3) % 22)}px"></i>`).join("")}</div><div class="tname"><span>${t.name}</span><em>${t.light ? "light" : "dark"}</em></div></button>`).join("");
+  document.getElementById("themeGrid").addEventListener("click", e => { const b = e.target.closest(".tcard"); if (b) apply(b.dataset.k); });
+
+  const tabs = document.querySelectorAll('[role="tab"]');
+  tabs.forEach(tb => tb.addEventListener("click", () => {
+    tabs.forEach(o => { o.setAttribute("aria-selected", o === tb); document.getElementById(o.getAttribute("aria-controls")).hidden = o !== tb; });
+  }));
+
+  function slider(id, prop, fmt, unit) {
+    const el = document.getElementById(id), out = document.getElementById(id + "O");
+    const go = () => { mock.style.setProperty(prop, el.value + (unit || "")); out.textContent = fmt(+el.value); };
+    el.addEventListener("input", go); go();
+  }
+  slider("op", "--op", v => v.toFixed(2));
+  slider("cop", "--chrome-op", v => v.toFixed(2));
+  slider("rad", "--radius", v => v, "px");
+  slider("gap", "--gap", v => v, "px");
+  slider("tsize", "--tsize", v => v, "px");
+  document.getElementById("tfont").addEventListener("change", e => mock.style.setProperty("--tfont", e.target.value));
+  document.getElementById("ufont").addEventListener("change", e => mock.style.setProperty("--ufont", e.target.value));
+  document.getElementById("bgChips").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    mock.dataset.bg = b.dataset.bg;
+    document.querySelectorAll("#bgChips .chip").forEach(o => o.setAttribute("aria-pressed", o === b));
+  });
+  document.querySelectorAll(".st-body:not(#p-glass) .chips").forEach(g => g.addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if (b && !b.getAttribute("aria-disabled")) b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true");
+  }));
+  apply(cur);
+})();
+</script>
+</body>
+</html>
