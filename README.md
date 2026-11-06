@@ -64,7 +64,7 @@ A theme with only colors (Herdr's, a preset, a fresh import) leaves type and gla
 and puts glass colors set by hex back to the theme's own. Picking a dark theme sets dark mode's
 theme, a light one light mode's.
 
-**The editor** opens from Edit, with three tabs. The theme becomes the one in use first, so the
+**The editor** opens from Edit, with four tabs. The theme becomes the one in use first, so the
 real window shows every change; a mock window above shows them too. Nothing is kept until
 **Save**. **Discard** drops the changes, and **← Themes** with unsaved changes asks first.
 
@@ -72,6 +72,7 @@ real window shows every change; a mock window above shows them too. Nothing is k
 |---|---|---|
 | Colors | `themes/<name>.json`; Behind panes goes on the layout | Every theme color, with WCAG contrast badges on text tokens. Click one to edit it with the color picker. Also the color behind panes, and the cursor: color (theme) plus shape (Block, Underline, Bar) and blink. Herdr only rereads a theme file when it's picked, so the Studio re-picks after each write. |
 | Type | `settings.json` (`font`, `font_size`, `ui_font`, `font_ligatures`, `minimum_contrast`) | A sample terminal shows picks at once (font, size, ligatures, contrast lift). Herdr rereads `settings.json` only every few seconds (up to about 10), so on your own layout copy fonts and size also go on the layout for 15 s and show at once. Fonts render in their own face. "Open fonts folder" is for `.ttf`/`.otf` files Herdr loads without installing them system-wide. |
+| Agents | shared `theme-studio.agents`; the layout's agents block | The sidebar's agents list: Comfortable (Herdr's own), Compact or Dense, sliders for row height, text, icon and group header size, and switches for the time since, group headers, icons and the "Needs you" badge (off: a small !). A mock list shows them before Save. Herdr's agents mod can't be edited, so once anything differs from Herdr's, your layout copy shows `mods/agents-studio`: a copy of Herdr's list, rebuilt from it on each Save, that reads these settings live. If a Herdr update changes the list too much to adjust, the Studio says so and keeps Herdr's. |
 | Glass | the shown layout, through `layout.set` | Herdr's own layouts refuse these fields, so the tab first makes your copy (`<layout>-studio`). Background: theme, a gradient in two colors you pick, Bloom (a base color with three soft glows, rendered into a picture), frosted wallpaper or image (Choose… opens the macOS file picker; you can also drop a picture, and one from outside Herdr's folder is copied into `backgrounds/`); the glass surfaces' opacity (their color is the theme's chrome and terminal color); pane radius, the margin around the panes, and the gap between them. |
 
 12 presets ship in `presets/` (sources in `presets/SOURCES.md`); applying one copies it into `themes/`.
@@ -122,7 +123,7 @@ Manager: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<f
 editor: `tab=<colors|type|glass>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
-`cursor=block|underline|bar` · `cursor-blink=on|off` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
+`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `button=on|off` · `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
 ## Checks

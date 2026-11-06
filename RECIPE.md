@@ -20,7 +20,7 @@ Two levels: the **theme manager** (with an **import** view), and the **editor** 
   · light <name> · <mode> mode now`, and an **Import** button. Import: **← Themes**, "Import a
   theme". Editor: **← Themes**, "Editing <name>", "Changes show in the window; Save keeps them
   in <name>." Pressing anywhere here drags the window.
-- **Tabs** (editor only): Colors, Type, Glass, as pills 12.5px, radius 7, 10px side padding.
+- **Tabs** (editor only): Colors, Type, Glass, Agents, as pills 12.5px, radius 7, 10px side padding.
   The chosen one is `accent` with `accent_foreground` text; the rest have a `border` outline.
   A 1px `border` line below.
 - **Body**, scrolling, 14px padding, 16px between sections. Each section has an 11px
@@ -163,12 +163,22 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
 - **Commands**: `herdr-app do theme-studio.<command>` or `"theme-studio:<command>"` in
   keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>`,
   `delete-theme=<name>`, `export=<name>`, `view=themes|import`, `back`, `save`, `discard`,
-  `tab=colors|type|glass`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
+  `tab=colors|type|glass|agents`, `agents=<preset>`, `agents-<key>=<n|on|off>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
   `size=`, `stage=<key>:<value>`, `glass-color=<key>:<hex|>`, `pick=<tok:token|glass:key>`,
   `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply` (Save in the editor), `cancel`,
   `glass=Solid|Tinted|Frosted`, `bg=`, `opacity|chrome|radius|gap|angle=<n>`, `behind=`
   (the glass ones stage), `button=on|off`, `copy-layout`, `import=<name>` (clipboard),
   `import-file=<path>`, `image=<path>` (none: the picker), `revert`.
+- **Agents list**: Herdr's `agents` mod draws it and can't be edited, so the Studio clones it as
+  `mods/agents-studio` (`mod.clone`), then rebuilds the clone's `main.js` from Herdr's current one
+  on each Save: `mods/agents/` paths and `mod: "agents"` overlays renamed, then nine exact
+  replacements (`patchAgents` in lib.js; each anchor must match once, else it refuses and Herdr's
+  list stays) that read `studioAgents()`, a helper merging `{ row: 30, text: 13, icon: 16, header:
+  30, time, headers, icons, badge: true }` with shared `theme-studio.agents`. The clone reads it on
+  each render, so changes show at once. Every layout push swaps the agents block to the clone when
+  any value differs from Herdr's, and back when none does. Presets: Comfortable 30/13/16/30,
+  Compact 24/12/14/24, Dense 20/11.5/12/20 (row/text/icon/header). Sub-agent rows follow at row
+  minus 4, text minus 0.5, icon minus 2. Saved with the theme like glass.
 - **Image background**: Herdr gives mods no file dialog, so **Choose…** runs
   `osascript -e 'POSIX path of (choose file of type {"public.image"} ...)'` (cancel returns nothing).
   The row also takes a dropped file. Layouts read pictures only inside Herdr's folder, so a

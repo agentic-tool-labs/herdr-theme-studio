@@ -221,6 +221,54 @@ function studioRadius() {
   return (src.slice(0, at) + helper + src.slice(at)).replace(root, ".size_full()$1.rounded_t(studioRadius())$1.px(10)");
 }
 
+// The agents list in the sidebar is Herdr's `agents` mod. The Studio's sizes and hidden parts go in a
+// clone, rebuilt from Herdr's current file, that reads them live from shared "theme-studio.agents".
+export const AGENTS_MOD = "agents-studio";
+export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, time: true, headers: true, icons: true, badge: true };
+const AGENTS_PATCH = [
+  ["icon(a.program, 16, t.foreground)", "icon(a.program, studioAgents().icon, t.foreground)"],
+  [".h(30)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(9)",
+    ".h(studioAgents().row)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(studioAgents().row < 26 ? 6 : 9)\n        .text_size(studioAgents().text)"],
+  [".when(Boolean(pic), el => el.child(div().id(`agent-fold-", ".when(Boolean(pic) && studioAgents().icons, el => el.child(div().id(`agent-fold-"],
+  [".when(this.hovered !== a.address && Boolean(when), el =>", ".when(this.hovered !== a.address && Boolean(when) && studioAgents().time, el =>"],
+  [".child(this.status(t, a, byPriority && !isPinned));", ".child(this.status(t, a, (byPriority && !isPinned) || !studioAgents().badge));"],
+  [".id(g.id)\n        .px(8)\n        .pt(8)\n        .h(30)", ".id(g.id)\n        .px(8)\n        .pt(studioAgents().header < 26 ? 4 : 8)\n        .h(studioAgents().header)"],
+  [": groups.flatMap((g) => [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]);",
+    ": groups.flatMap((g) => studioAgents().headers ? [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))] : g.members.flatMap(withKids));"],
+  ["const pic = icon(k.program, 14, t.foreground);", "const pic = icon(k.program, Math.max(8, studioAgents().icon - 2), t.foreground);"],
+  [".rounded(8)\n      .h(26)\n      .flex_none()\n      .gap(0)\n      .items_center()\n      .text_size(12.5)",
+    ".rounded(8)\n      .h(Math.max(16, studioAgents().row - 4))\n      .flex_none()\n      .gap(0)\n      .items_center()\n      .text_size(studioAgents().text - 0.5)"],
+];
+/** Herdr's agents mod with the Studio's sizes and parts, or null when its code no longer matches. */
+export function patchAgents(src) {
+  if (src.includes("studioAgents(")) return src;
+  if (!/import \{[^}]*\bshared\b[^}]*\} from "herdr";/.test(src)) return null;
+  let out = src;
+  for (const [from, to] of AGENTS_PATCH) {
+    if (out.split(from).length !== 2) return null; // each anchor exactly once
+    out = out.replace(from, () => to);
+  }
+  const helper = `
+// Added by Theme Studio: row sizes and the parts shown, from shared "theme-studio.agents".
+function studioAgents() { return { ...${JSON.stringify(AGENTS_DEFAULT)}, ...(shared("theme-studio.agents") || {}) }; }
+`;
+  const at = out.indexOf("\n", out.indexOf('from "herdr";')) + 1;
+  return out.slice(0, at) + helper + out.slice(at);
+}
+
+/** Copy of a layout tree with its agents blocks on the Studio's clone (on) or Herdr's own mod. */
+export function withAgentsMod(tree, on) {
+  const [from, to] = on ? ["agents", AGENTS_MOD] : [AGENTS_MOD, "agents"];
+  const walk = (n) => {
+    if (!n || typeof n !== "object") return n;
+    const c = { ...n };
+    if (c.content && c.content.mod === from) c.content = { ...c.content, mod: to };
+    if (Array.isArray(c.children)) c.children = c.children.map(walk);
+    return c;
+  };
+  return walk(tree);
+}
+
 export const GLASS_DEFAULT = { bg: "theme", angle: 165, from: "accent", to: "canvas", image: "", frost: "", opacity: 1, chrome: 1, radius: 6, gap: 6, margin: 8, behind: "",
   bloom: "", bloomBase: "canvas", glowA: "accent", glowB: "ansi5", glowC: "ansi6", glowIntensity: 100 };
 /** Glass fields a layout tree can't give back (the bloom colors), kept beside it in shared state. */

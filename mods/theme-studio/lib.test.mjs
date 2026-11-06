@@ -1,6 +1,7 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD } from "./lib.js";
+import { readFileSync, existsSync } from "node:fs";
 
 // contrast
 assert.equal(Math.round(contrast("#000000", "#ffffff")), 21);
@@ -215,3 +216,18 @@ assert.equal(hslaToHex(0, 0, 100, 50), "#ffffff80");
 for (const hex of ["#1a1b26", "#7aa2f7", "#e0af68", "#000000"]) assert.equal(hslaToHex(...hexToHsla(hex)).length, 7);
 
 console.log("lib.test: all passed");
+
+// agents patch: against Herdr's shipped agents mod when it's installed here
+const shippedAgents = `${process.env.HOME}/.config/herdr-app/mods/agents/main.js`;
+if (existsSync(shippedAgents)) {
+  const pa = patchAgents(readFileSync(shippedAgents, "utf8"));
+  assert.ok(pa && pa.includes("function studioAgents()") && pa.includes(".h(studioAgents().row)"), "the shipped agents mod patches");
+  assert.equal(patchAgents(pa), pa);
+}
+assert.equal(patchAgents('import { shared } from "herdr";\nnothing to patch'), null, "a changed agents mod is refused");
+const agTree = { id: "root", children: [{ id: "sidebar", children: [{ id: "agents", type: "block", content: { mod: "agents" } }] }] };
+assert.equal(withAgentsMod(agTree, true).children[0].children[0].content.mod, AGENTS_MOD);
+assert.equal(withAgentsMod(withAgentsMod(agTree, true), false).children[0].children[0].content.mod, "agents");
+assert.equal(agTree.children[0].children[0].content.mod, "agents", "the input tree is left alone");
+console.log("lib.test: agents patch passed");
+

@@ -7,12 +7,12 @@ import { View, div, image } from "gpui-kit";
 import { v_flex, h_flex, Popup, InputState, Input, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes, settings, fonts, layout, layouts, nextCommand, shared, setShared, run, exec, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono } from "./lib.js";
 
 const HOME = appHome();
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", cursor: "theme-studio.cursor" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor" };
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -33,7 +33,14 @@ const CURSOR_SEND = `ps -A -o pid=,ppid=,tty=,comm= | awk '$4 ~ /herdr-core$/ {c
 const HOLD_MS = 15000;
 const LIVE_LOOK = { font: "font_family", font_size: "font_size", ui_font: "ui_font_family" };
 // The Studio opens on the theme manager; Edit opens a theme in the editor, with these tabs.
-const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"]];
+const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"], ["agents", "Agents"]];
+// The agents list: density presets (Comfortable is Herdr's own) and the sliders' ranges.
+const AGENT_PRESETS = {
+  Comfortable: { row: 30, text: 13, icon: 16, header: 30 },
+  Compact: { row: 24, text: 12, icon: 14, header: 24 },
+  Dense: { row: 20, text: 11.5, icon: 12, header: 20 },
+};
+const AGENT_SLIDERS = { row: [18, 34, 1], text: [10.5, 14, 0.5], icon: [10, 18, 1], header: [16, 34, 1] };
 
 const GROUPS = [
   ["Surfaces", ["background", "canvas", "chrome", "surface", "popover", "raised", "hover", "selected"]],
@@ -108,6 +115,13 @@ export default class ThemeStudio extends View {
 
     this.glass = { ...GLASS_DEFAULT }; // what the layout has
     this.glassDraft = {}; // Glass tab changes not yet applied
+    this.agentsDraft = {}; // Agents tab changes not yet applied
+    this.agentSliders = {};
+    for (const [k, [min, max, step]] of Object.entries(AGENT_SLIDERS)) {
+      const s = SliderState.new({ min, max, step, value: this.agentsNow()[k] });
+      s.on("change", (v, cx) => this.stageAgents({ [k]: v }, cx));
+      this.agentSliders[k] = s;
+    }
     this.glassFor = null;
     this.sliders = {};
     for (const [k, [min, max, step]] of Object.entries(SLIDERS)) {
@@ -191,7 +205,8 @@ export default class ThemeStudio extends View {
     else if (verb === "import") this.importTheme(cx, cx.read_from_clipboard() || "", arg);
     else if (verb === "import-file") this.importFile(arg, cx);
     else if (verb === "behind") this.stageGlass({ behind: arg }, cx);
-    else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
+    else if (verb === "agents" && AGENT_PRESETS[arg]) this.stageAgents({ ...AGENT_PRESETS[arg] }, cx);
+    else if (verb.startsWith("agents-") && verb.slice(7) in AGENTS_DEFAULT) { const k = verb.slice(7); this.stageAgents({ [k]: typeof AGENTS_DEFAULT[k] === "boolean" ? arg !== "off" : Number(arg) }, cx); }
     else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
     else if (verb === "button") this.setButton(arg !== "off", cx);
     else if (verb !== "focus") this.say(`Unknown command ${c}`, "error", cx);
@@ -401,7 +416,7 @@ export default class ThemeStudio extends View {
 
   changes() {
     const n = (o, skip) => Object.keys(o).filter((k) => k !== skip).length;
-    return { theme: this.themeDraft ? 1 : 0, type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
+    return { theme: this.themeDraft ? 1 : 0, agents: n(this.agentsDraft), type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
   }
 
   // Merges a patch into the glass draft (null drops the draft), dropping keys back at their applied value.
@@ -412,6 +427,20 @@ export default class ThemeStudio extends View {
     }
     if (patch && Object.keys(patch).some((k) => BLOOM_KEYS.includes(k))) this.scheduleBloom(cx);
     this.syncControls();
+    cx.notify();
+  }
+
+  // The agents list as the clone shows it now, and with what's staged (a picked theme's own, then edits).
+  agentsNow() { return { ...AGENTS_DEFAULT, ...(shared(K.agents) || {}) }; }
+  agentsShown() {
+    const ex = this.themeDraft && extrasOf(this.themeDraft.name);
+    return { ...this.agentsNow(), ...((ex && ex.agents) || {}), ...this.agentsDraft };
+  }
+  stageAgents(patch, cx) {
+    const now = this.agentsNow();
+    for (const [k, v] of Object.entries(patch)) if (now[k] === v) delete this.agentsDraft[k]; else this.agentsDraft[k] = v;
+    const a = this.agentsShown();
+    for (const [k, sl] of Object.entries(this.agentSliders)) if (sl.value() !== a[k]) sl.set_value(a[k]);
     cx.notify();
   }
 
@@ -490,7 +519,7 @@ export default class ThemeStudio extends View {
   }
 
   cancelAll(cx) {
-    this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null;
+    this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {};
     this.pickFor = null; this.leaving = false;
     this.syncControls();
     cx.notify();
@@ -504,7 +533,8 @@ export default class ThemeStudio extends View {
     const type = { ...((ex && ex.type) || {}), ...this.draft };
     const cursor = { ...(ex && ex.cursor ? { ...this.cursorShown(), ...ex.cursor } : {}), ...this.cursorDraft };
     const glass = { ...this.themeReset(), ...this.glassDraft };
-    if (!th && ![type, colors, glass, cursor].some((d) => Object.keys(d).length)) return after && cx.spawn((cx) => this.guard(cx, "Opening", after));
+    const agents = { ...((ex && ex.agents) || {}), ...this.agentsDraft };
+    if (!th && ![type, colors, glass, cursor, agents].some((d) => Object.keys(d).length)) return after && cx.spawn((cx) => this.guard(cx, "Opening", after));
     cx.spawn((cx) => this.guard(cx, "Applying", async () => {
       const done = [];
       if (th) {
@@ -520,7 +550,8 @@ export default class ThemeStudio extends View {
       // file's root theme should name the theme in use.
       if (this.personal() && (Object.keys(glass).length || th)) { await this.writeGlass(cx, glass); if (Object.keys(glass).length) done.push("glass"); }
       if (Object.keys(cursor).length) { await this.writeCursor({ ...this.cursorShown(), ...cursor }); done.push("cursor"); }
-      this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null;
+      if (Object.keys(agents).length && this.personal()) { await this.writeAgents(cx, { ...this.agentsNow(), ...agents }); done.push("agents list"); }
+      this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {};
       this.pickFor = null; this.syncControls();
       this.say(`Applied ${done.join(", ")}`, "success", cx);
       if (after) await after();
@@ -531,11 +562,40 @@ export default class ThemeStudio extends View {
     // Herdr keeps the theme pick in layouts/.state, apart from the tree's root theme, which can be older.
     // A push writes the pick into the file too, so the file alone says what's shown.
     const s = settings(), tree = s.theme_dark && s.theme_light ? { ...layout(), theme: { light: s.theme_light, dark: s.theme_dark } } : layout();
-    run("layout.set", { layout: applyGlass(tree, this.glass, this.baseColors()) });
+    run("layout.set", { layout: withAgentsMod(applyGlass(tree, this.glass, this.baseColors()), this.agentsCustom()) });
   }
 
   // Herdr's pane header paints square corners inside the rounded card. A clone of it, patched to round
   // its top corners with the card, masks them. Made once; Herdr's own `pane` mod is untouched.
+  // Herdr's own agents list unless something differs from it, so an unchanged list never needs the clone.
+  agentsCustom() {
+    const a = this.agentsNow();
+    return Object.keys(AGENTS_DEFAULT).some((k) => a[k] !== AGENTS_DEFAULT[k]);
+  }
+
+  // Saves the agents list settings (the clone reads them live) and points the layout at the clone.
+  async writeAgents(cx, a) {
+    if (Object.keys(AGENTS_DEFAULT).some((k) => a[k] !== AGENTS_DEFAULT[k])) await this.ensureAgentsClone(cx);
+    setShared(K.agents, a);
+    this.pushGlass();
+  }
+
+  // The clone is rebuilt from Herdr's current agents mod each time, so it keeps up with Herdr's updates.
+  async ensureAgentsClone(cx) {
+    const dir = `${HOME}/mods/${AGENTS_MOD}`;
+    if (!(await fs.exists(`${dir}/main.js`))) {
+      run("mod.clone", { name: "agents", as: AGENTS_MOD });
+      for (let i = 0; i < 30 && !(await fs.exists(`${dir}/main.js`)); i++) await sleep(cx, 100);
+    }
+    const shipped = await readTextFile(`${HOME}/mods/agents/main.js`);
+    // As mod.clone writes it: its own asset paths, and overlays it opens of itself under the new name.
+    const own = shipped && shipped.split("mods/agents/").join(`mods/${AGENTS_MOD}/`).split('mod: "agents"').join(`mod: "${AGENTS_MOD}"`);
+    const want = own && patchAgents(own);
+    if (!want) throw new Error("This Herdr version's agents list changed, so the Studio can't resize it yet. Herdr's own list stays.");
+    const now = await readTextFile(`${dir}/main.js`);
+    if (want !== now) await writeTextFile(`${dir}/main.js`, want, now);
+  }
+
   async ensureRoundedHeader(cx) {
     const dir = `${HOME}/mods/${ROUNDED_HEADER}`;
     if (!(await fs.exists(`${dir}/main.js`))) {
@@ -826,6 +886,7 @@ export default class ThemeStudio extends View {
         // Rendered pictures are dropped as newer ones replace them, so the theme keeps the recipe and re-renders.
         glass: this.personal() ? { ...this.glass, bloom: "", frost: "" } : null,
         cursor: this.cursorShown(),
+        agents: this.agentsNow(),
       });
       this.leaving = false;
       this.say(`Saved ${name}`, "success", cx);
@@ -857,7 +918,7 @@ export default class ThemeStudio extends View {
     const s = this.shown();
     const overlay = props() && props().overlay;
     const view = this.view === "edit"
-      ? { themes: null, colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx) }[this.tab]()
+      ? { themes: null, colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx) }[this.tab]()
       : this.view === "import" ? this.importView(t, s, cx) : this.managerView(t, s, cx);
     // A view may pin a head (preview and its bar) above the part that scrolls.
     const head = view.head, body = view.head ? view.body : view;
@@ -892,7 +953,7 @@ export default class ThemeStudio extends View {
     this.goTo("themes", cx);
   }
 
-  changeCount() { const c = this.changes(); return c.type + c.colors + c.glass; }
+  changeCount() { const c = this.changes(); return c.type + c.colors + c.glass + c.agents; }
 
   // --- the theme manager -------------------------------------------------------
   managerView(t, s, cx) {
@@ -1114,6 +1175,17 @@ export default class ThemeStudio extends View {
       .child(v_flex().child(arrow("size-up", "▲", 1)).child(arrow("size-down", "▼", -1)));
   }
 
+  // A labelled slider with its value on the right.
+  slider(t, state, id, label, value) {
+    return v_flex().gap(4)
+      .child(h_flex().justify_between().child(div().text_color(t.muted).child(label)).child(div().text_size(12).child(value)))
+      .child(Slider.new(state).child(SliderTrack.new(state).flex().items_center().h(22).w_full().cursor_pointer()
+        .child(SliderIndicator.new(state).relative().w_full().h(4).rounded(2).bg(t.input)
+          .range_style((f) => f.rounded(2).bg(t.accent))
+          // A 24x16 pill; the shell places its top-left at the groove's top, so it's pulled back by half its size less the 4px groove.
+          .child(SliderThumb.new(state).id(`thumb-${id}`).w(24).h(16).rounded(8).bg(t.foreground).border_2().border_color(t.accent).ml(-12).mt(-6)))));
+  }
+
   checkbox(id, label, on, t, onClick) {
     return h_flex().id(id).gap(8).items_center().cursor_pointer().on_click(onClick)
       .child(div().size(16).rounded(4).flex().items_center().justify_center().text_size(11)
@@ -1125,8 +1197,8 @@ export default class ThemeStudio extends View {
   // The editor's bar under its preview: "N changes not saved" with Discard and Save. After Back with
   // unsaved changes it asks instead. One Save writes what every tab has staged.
   applyBar(t) {
-    const c = this.changes(), n = c.type + c.colors + c.glass;
-    const where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass]].filter(([, k]) => k).map(([w]) => w).join(", ");
+    const c = this.changes(), n = c.type + c.colors + c.glass + c.agents;
+    const where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass], ["Agents", c.agents]].filter(([, k]) => k).map(([w]) => w).join(", ");
     if (this.leaving && n) return h_flex().gap(6).items_center()
       .child(div().flex_1().min_w(0).text_size(12).child(`Save your changes to ${this.editing}?`))
       .child(this.button("stay", "Keep editing", t, (_e, cx) => { this.leaving = false; cx.notify(); }))
@@ -1171,13 +1243,7 @@ export default class ThemeStudio extends View {
     }
     const g = this.glassShown(), sel = this.pickTarget;
     const fmt = { opacity: (v) => v.toFixed(2), chrome: (v) => v.toFixed(2), radius: (v) => `${v}px`, gap: (v) => `${v}px`, margin: (v) => `${v}px`, angle: (v) => `${v}°`, glowIntensity: (v) => `${v}%` };
-    const slider = (k, label) => v_flex().gap(4)
-      .child(h_flex().justify_between().child(div().text_color(t.muted).child(label)).child(div().text_size(12).child(fmt[k](g[k]))))
-      .child(Slider.new(this.sliders[k]).child(SliderTrack.new(this.sliders[k]).flex().items_center().h(22).w_full().cursor_pointer()
-        .child(SliderIndicator.new(this.sliders[k]).relative().w_full().h(4).rounded(2).bg(t.input)
-          .range_style((f) => f.rounded(2).bg(t.accent))
-          // A 24x16 pill; the shell places its top-left at the groove's top, so it's pulled back by half its size less the 4px groove.
-          .child(SliderThumb.new(this.sliders[k]).id(`thumb-${k}`).w(24).h(16).rounded(8).bg(t.foreground).border_2().border_color(t.accent).ml(-12).mt(-6)))));
+    const slider = (k, label) => this.slider(t, this.sliders[k], k, label, fmt[k](g[k]));
     // A row of color chips; the picker opens under the row for the selected one.
     const colors = (keys, note) => v_flex().gap(6)
       .child(h_flex().flex_wrap().gap(6).children(keys.map(([k, label]) => this.chip(t, `gc-${k}`, label, this.glassHex(k), sel === `glass:${k}`, (_e, cx) => this.selectTarget(`glass:${k}`, cx)))))
@@ -1220,6 +1286,56 @@ export default class ThemeStudio extends View {
       .on_click(onClick)
       .child(div().size(14).rounded(7).bg(hex).border_1().border_color(t.input))
       .child(div().child(label));
+  }
+
+  agentsTab(t, s, cx) {
+    if (!this.personal()) {
+      return v_flex().gap(12).p(12).rounded(8).bg(t.raised)
+        .child(div().font_semibold().child("The agents list needs your own copy of this layout"))
+        .child(div().text_color(t.muted).line_height("19px").child(`Herdr's own layouts (${shared("layout")}) can't swap their agents list. A copy can: it shows the Studio's version of the list, a copy of Herdr's with your sizes. The Studio closes for a moment while Herdr switches.`))
+        .child(h_flex().child(this.button("copy", `Make my copy of ${shared("layout")}`, t, (_e, cx) => this.makeCopy(cx, "agents"), true)));
+    }
+    const a = this.agentsShown();
+    const px = (v) => `${v}px`;
+    const preset = Object.entries(AGENT_PRESETS).find(([, p]) => Object.keys(p).every((k) => p[k] === a[k]));
+    const body = v_flex().gap(16)
+      .child(this.section("Density", t, h_flex().flex_wrap().gap(6)
+        .children(Object.keys(AGENT_PRESETS).map((name) => this.pill(`agp-${name}`, name, preset && preset[0] === name, t, (_e, cx) => this.stageAgents({ ...AGENT_PRESETS[name] }, cx)))),
+        "Comfortable is Herdr's own list. Fine-tune with the sliders."))
+      .child(this.section("Sizes", t, v_flex().gap(12)
+        .child(this.slider(t, this.agentSliders.row, "ag-row", "Row height", px(a.row)))
+        .child(this.slider(t, this.agentSliders.text, "ag-text", "Text size", px(a.text)))
+        .child(this.slider(t, this.agentSliders.icon, "ag-icon", "Icon size", px(a.icon)))
+        .child(this.slider(t, this.agentSliders.header, "ag-header", "Group header height", px(a.header)))))
+      .child(this.section("Show", t, v_flex().gap(8)
+        .child(this.checkbox("ag-time", "Time since (3m, 12m)", a.time, t, (_e, cx) => this.stageAgents({ time: !a.time }, cx)))
+        .child(this.checkbox("ag-headers", "Group headers (Working, Pinned, …)", a.headers, t, (_e, cx) => this.stageAgents({ headers: !a.headers }, cx)))
+        .child(this.checkbox("ag-icons", "Agent icons", a.icons, t, (_e, cx) => this.stageAgents({ icons: !a.icons }, cx)))
+        .child(this.checkbox("ag-badge", "\"Needs you\" badge (off: a small !)", a.badge, t, (_e, cx) => this.stageAgents({ badge: !a.badge }, cx))),
+        "Your layout copy shows the Studio's copy of Herdr's agents list once anything here differs from Herdr's. It's rebuilt from Herdr's list on each Save, so Herdr's updates still reach it."));
+    return { head: v_flex().gap(8).child(this.agentsPreview(t, a)).child(this.applyBar(t)), body };
+  }
+
+  // A mock of the sidebar's agents list with the staged sizes.
+  agentsPreview(t, a) {
+    const rows = [["herdr-app-theming", "3m", "working"], ["agent-tools-private", "12m", "blocked"], ["notes", "1h", "idle"]];
+    const status = (st) => st === "working" ? div().size(10).flex_none().rounded(5).border_2().border_color(t.working)
+      : st === "blocked" ? (a.badge ? div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
+        : div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!"))
+      : div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle || t.dim);
+    const row = ([name, when, st], i) => h_flex().id(`agm-${i}`).px(8).h(a.row).flex_none().rounded(8).items_center().gap(a.row < 26 ? 6 : 9).text_size(a.text)
+      .when(i === 0, (el) => el.bg(t.selected))
+      .when(a.icons, (el) => el.child(div().size(a.icon).flex_none().rounded(4).bg(t.accent)))
+      .child(div().flex_1().min_w(0).truncate().text_color(st === "idle" ? t.muted : t.foreground).child(name))
+      .when(a.time, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(when)))
+      .child(status(st));
+    const header = (label, n) => h_flex().px(8).pt(a.header < 26 ? 4 : 8).h(a.header).flex_none().gap(6).items_center().text_size(11).font_medium().text_color(t.dim)
+      .child(label).child(div().text_color(t.dim).child(String(n)));
+    return v_flex().w(240).p(8).rounded(8).bg(t.chrome).border_1().border_color(t.border).self_center()
+      .when(a.headers, (el) => el.child(header("Working", 2)))
+      .child(row(rows[0], 0)).child(row(rows[1], 1))
+      .when(a.headers, (el) => el.child(header("Idle", 1)))
+      .child(row(rows[2], 2));
   }
 
   // A small mock window drawn from the staged theme colors and glass: backdrop, sidebar and tab bar,
