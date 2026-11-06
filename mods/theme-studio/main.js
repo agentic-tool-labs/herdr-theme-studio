@@ -12,7 +12,7 @@ import { cursorCode, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, 
 const HOME = appHome();
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", looks: "theme-studio.looks", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", cursor: "theme-studio.cursor" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", cursor: "theme-studio.cursor" };
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -32,7 +32,8 @@ const CURSOR_SEND = `ps -A -o pid=,ppid=,tty=,comm= | awk '$4 ~ /herdr-core$/ {c
 // settings() reports the layout's look and can't show when settings.json landed.
 const HOLD_MS = 15000;
 const LIVE_LOOK = { font: "font_family", font_size: "font_size", ui_font: "ui_font_family" };
-const TABS = [["themes", "Themes"], ["colors", "Colors"], ["type", "Type"], ["glass", "Glass"], ["library", "Library"]];
+// The Studio opens on the theme manager; Edit opens a theme in the editor, with these tabs.
+const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"]];
 
 const GROUPS = [
   ["Surfaces", ["background", "canvas", "chrome", "surface", "popover", "raised", "hover", "selected"]],
@@ -68,13 +69,21 @@ const CONTRASTS = [1, 1.6, 3, 4.5, 7];
 const sleep = (cx, ms) => cx.sleep(ms);
 const ownedThemes = () => shared(K.owned) || [];
 const themePath = (name) => `${HOME}/themes/${name}.json`;
+// What a Studio theme holds beside its colors file: { type, glass, cursor }, by theme name.
+const extrasOf = (name) => (shared(K.themes) || {})[name] || null;
+const setExtras = (name, ex) => { const all = { ...(shared(K.themes) || {}) }; if (ex) all[name] = ex; else delete all[name]; setShared(K.themes, all); };
 
 export default class ThemeStudio extends View {
   init(_props, cx) {
     // An older sidebar-row block (props.part "button") is a second copy of this mod: it draws nothing.
     this.part = props() && props().part;
     if (this.part === "button") return;
-    this.tab = TABS.some(([id]) => id === shared(K.tab)) ? shared(K.tab) : "themes";
+    this.tab = TABS.some(([id]) => id === shared(K.tab)) ? shared(K.tab) : "colors";
+    // "themes" (the manager), "import", or "edit" (this.editing in the tabs). An editor survives a reopen.
+    this.editing = ownedThemes().includes(shared(K.editing)) ? shared(K.editing) : null;
+    this.view = this.editing ? "edit" : "themes";
+    this.ask = null; // the manager's inline step: { kind: "copy", from, edit } or { kind: "delete", name }
+    this.leaving = false; // Back pressed in the editor with unsaved changes
     this.msg = null;
     this.busy = false;
     this.presets = [];
@@ -94,8 +103,8 @@ export default class ThemeStudio extends View {
     this.importName = InputState.new({ placeholder: "Theme name" });
     this.imagePath = InputState.new({ placeholder: "backgrounds/my-picture.jpg (in ~/.config/herdr-app)" });
     this.imagePath.on("submit", (_e, cx) => this.stageGlass({ bg: "image", image: this.imagePath.value().trim() }, cx));
-    this.lookName = InputState.new({ placeholder: "Name this look" });
-    this.lookName.on("submit", (_e, cx) => this.saveLook(cx));
+    this.copyName = InputState.new({ placeholder: "Name for the copy" });
+    this.copyName.on("submit", (_e, cx) => this.copyTheme(this.ask && this.ask.from, this.copyName.value(), cx, this.ask && this.ask.edit));
 
     this.glass = { ...GLASS_DEFAULT }; // what the layout has
     this.glassDraft = {}; // Glass tab changes not yet applied
@@ -147,15 +156,22 @@ export default class ThemeStudio extends View {
   // Colors, glass and Type picks all stage; `apply` writes every staged change, `cancel` drops them.
   // tab=<id> · theme=<name> · color=<token>:<hex> · reset=<token> · glass-color=<key>:<hex|> · pick=<tok:token|glass:key> · cursor=block|underline|bar · cursor-blink=on|off · font=<family> · ui-font=<family>
   // size=<n> · glass=Solid|Tinted|Frosted · bg=theme|gradient|frost|image · opacity|chrome|radius|gap|angle=<n>
-  // stage=<key>:<value> · apply · cancel (Type and Glass) · font-menu=terminal|ui|close (Type tab) · import=<name> (from the clipboard) · import-file=<path> · behind=<color> · button=on|off · copy-layout · look=<name> · delete-look=<name> · save-look=<name> · revert
+  // stage=<key>:<value> · apply · cancel (Type and Glass) · font-menu=terminal|ui|close (Type tab) · import=<name> (from the clipboard) · import-file=<path> · behind=<color> · button=on|off · copy-layout · revert
+  // view=themes|import · select=<name> · edit=<name> · copy=<from>:<new> · delete-theme=<name> · export=<name> · save · discard
   command(c, cx) {
     const i = c.indexOf("=");
     const verb = i < 0 ? c : c.slice(0, i), arg = i < 0 ? "" : c.slice(i + 1);
     const num = Number(arg);
     if (verb === "tab" && TABS.some(([id]) => id === arg)) { this.tab = arg; setShared(K.tab, arg); }
-    else if (verb === "theme") {
-      this.stageTheme(arg, cx);
-    } else if (verb === "color") { const [tok, hex] = arg.split(":"); this.selectTarget(`tok:${tok}`, cx, false); this.stageHex(hex, cx); }
+    else if (verb === "back" || (verb === "view" && arg === "themes" && this.view === "edit")) this.back(cx);
+    else if (verb === "view" && ["themes", "import"].includes(arg)) this.goTo(arg, cx);
+    else if (verb === "theme" || verb === "select") this.stageTheme(arg, cx);
+    else if (verb === "edit") this.editTheme(arg, cx);
+    else if (verb === "copy") { const [from, as] = arg.split(":"); this.copyTheme(from, as, cx); }
+    else if (verb === "delete-theme") this.deleteTheme(arg, cx);
+    else if (verb === "export") this.exportTheme(arg || this.selected(), cx);
+    else if (verb === "save") this.saveEdit(cx);
+    else if (verb === "discard") { this.cancelAll(cx); this.goTo("themes", cx); } else if (verb === "color") { const [tok, hex] = arg.split(":"); this.selectTarget(`tok:${tok}`, cx, false); this.stageHex(hex, cx); }
     else if (verb === "reset") this.stageColor(arg, null, cx);
     else if (verb === "glass-color") { const [key, hex] = arg.split(":"); this.selectTarget(`glass:${key}`, cx, false); this.stageHex(hex ?? "", cx); }
     else if (verb === "pick") this.selectTarget(arg || null, cx, false);
@@ -164,16 +180,13 @@ export default class ThemeStudio extends View {
     else if (verb === "font" || verb === "ui-font") this.setSetting({ [verb === "font" ? "font" : "ui_font"]: arg }, `Font ${arg}`, cx);
     else if (verb === "size" && num) this.setSetting({ font_size: num }, `Text size ${num}`, cx);
     else if (verb === "stage") { const [k, ...r] = arg.split(":"), x = r.join(":"); this.stage(k, x === "true" ? true : x === "false" ? false : isNaN(+x) ? x : +x, cx); }
-    else if (verb === "apply") this.applyAll(cx);
+    else if (verb === "apply") this.view === "edit" ? this.saveEdit(cx) : this.applyAll(cx);
     else if (verb === "font-menu") { this.fontOpen = arg === "close" ? null : arg === "ui" ? "ui_font" : "font"; cx.notify(); }
     else if (verb === "cancel") this.cancelAll(cx);
     else if (verb === "glass" && GLASS_PRESETS[arg]) this.stageGlass({ ...GLASS_PRESETS[arg] }, cx);
     else if (verb === "bg") this.stageGlass({ bg: arg }, cx);
     else if (verb in SLIDERS && !Number.isNaN(num)) this.stageGlass({ [verb]: num }, cx);
     else if (verb === "copy-layout") this.makeCopy(cx);
-    else if (verb === "look") { const l = (shared(K.looks) || []).find((x) => x.name === arg); if (l) this.applyLook(l, cx); }
-    else if (verb === "delete-look") setShared(K.looks, (shared(K.looks) || []).filter((l) => l.name !== arg));
-    else if (verb === "save-look") { this.lookName.set_value(arg); this.saveLook(cx); }
     else if (verb === "revert") this.revert(cx);
     else if (verb === "import") this.importTheme(cx, cx.read_from_clipboard() || "", arg);
     else if (verb === "import-file") this.importFile(arg, cx);
@@ -272,7 +285,7 @@ export default class ThemeStudio extends View {
 
   // Writes staged tokens (hex, or null to reset) into the theme being edited, in one write.
   async writeColors(cx, draft) {
-    const name = await this.editableTheme(cx);
+    const name = this.view === "edit" && this.editing ? this.editing : await this.editableTheme(cx);
     let file = await this.readThemeFile(name);
     for (const [token, hex] of Object.entries(draft)) file = setToken(file, token, hex);
     await this.writeThemeFile(name, file);
@@ -336,7 +349,8 @@ export default class ThemeStudio extends View {
   // The current theme's own colors (not the layout's translucent overrides), with staged edits.
   ownColors() {
     if (this.themeDraft) return this.themeDraft.colors;
-    return (themes().find((x) => x.name === settings().theme) || {}).colors || theme();
+    const name = this.view === "edit" && this.editing ? this.editing : settings().theme;
+    return (themes().find((x) => x.name === name) || {}).colors || theme();
   }
 
   themeColors() {
@@ -347,9 +361,12 @@ export default class ThemeStudio extends View {
 
   glassShown() { return { ...this.glass, ...this.themeReset(), ...this.glassDraft }; }
 
-  // With a theme staged, the glass colors set to a fixed hex go back to their theme-following defaults.
+  // With a theme staged: its own saved glass, or else the glass colors set to a fixed hex go back to
+  // their theme-following defaults.
   themeReset() {
     if (!this.themeDraft) return {};
+    const ex = extrasOf(this.themeDraft.name);
+    if (ex && ex.glass && this.personal()) return { ...GLASS_DEFAULT, ...ex.glass, bloom: "", frost: this.glass.frost }; // bloom re-renders
     return Object.fromEntries(GLASS_COLORS.filter((k) => String(this.glass[k] || "").startsWith("#")).map((k) => [k, GLASS_DEFAULT[k]]));
   }
 
@@ -472,16 +489,20 @@ export default class ThemeStudio extends View {
 
   cancelAll(cx) {
     this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null;
-    this.pickFor = null;
+    this.pickFor = null; this.leaving = false;
     this.syncControls();
     cx.notify();
   }
 
   // Everything staged, in one guarded task: settings.json, the theme file, then the layout.
-  applyAll(cx) {
-    const th = this.themeDraft, type = this.draft, colors = this.colorDraft, cursor = this.cursorDraft;
+  // `after` runs inside the same task once everything is written (the editor's Save, Edit's apply).
+  applyAll(cx, after) {
+    const th = this.themeDraft, ex = th && extrasOf(th.name), colors = this.colorDraft;
+    // A theme with saved type and cursor brings them too; anything staged on top wins.
+    const type = { ...((ex && ex.type) || {}), ...this.draft };
+    const cursor = { ...(ex && ex.cursor ? { ...this.cursorShown(), ...ex.cursor } : {}), ...this.cursorDraft };
     const glass = { ...this.themeReset(), ...this.glassDraft };
-    if (!th && ![type, colors, glass, cursor].some((d) => Object.keys(d).length)) return;
+    if (!th && ![type, colors, glass, cursor].some((d) => Object.keys(d).length)) return after && cx.spawn((cx) => this.guard(cx, "Opening", after));
     cx.spawn((cx) => this.guard(cx, "Applying", async () => {
       const done = [];
       if (th) {
@@ -493,13 +514,14 @@ export default class ThemeStudio extends View {
       }
       if (Object.keys(type).length) { await this.writeSettings(type); this.holdLook(type); done.push("type"); }
       if (Object.keys(colors).length) done.push(`colors in ${await this.writeColors(cx, colors)}`);
-      // Translucent glass holds hexes of the theme's colors, so a new theme redraws it too.
-      const see = this.glass.chrome < 1 || this.glass.opacity < 1 || this.glass.bg === "bloom";
-      if (Object.keys(glass).length || (th && see && this.personal())) { await this.writeGlass(cx, glass); if (Object.keys(glass).length) done.push("glass"); }
-      if (Object.keys(cursor).length) { await this.writeCursor(this.cursorShown()); done.push("cursor"); }
+      // A new theme pushes the layout too: translucent glass holds hexes of the theme's colors, and the
+      // file's root theme should name the theme in use.
+      if (this.personal() && (Object.keys(glass).length || th)) { await this.writeGlass(cx, glass); if (Object.keys(glass).length) done.push("glass"); }
+      if (Object.keys(cursor).length) { await this.writeCursor({ ...this.cursorShown(), ...cursor }); done.push("cursor"); }
       this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null;
       this.pickFor = null; this.syncControls();
       this.say(`Applied ${done.join(", ")}`, "success", cx);
+      if (after) await after();
     }));
   }
 
@@ -646,9 +668,11 @@ export default class ThemeStudio extends View {
       const name = slug(givenName || this.importName.value() || "imported");
       if ((await readTextFile(themePath(name))) && !ownedThemes().includes(name)) throw new Error(`a theme named ${name} already exists: pick another name`);
       await this.writeThemeFile(name, file);
-      await this.useTheme(cx, name);
+      await this.waitFor(cx, () => themes().some((t) => t.name === name));
       this.importText.set_value(""); this.importName.set_value("");
-      this.say(`Imported ${name}`, "success", cx);
+      this.view = "themes";
+      this.stageTheme(name, cx);
+      this.say(`Imported ${name}: Apply to use it, or Edit it`, "success", cx);
     }));
   }
 
@@ -681,42 +705,97 @@ export default class ThemeStudio extends View {
     });
   }
 
-  async currentThemeJSON() {
-    const name = settings().theme;
-    const own = await this.readThemeFile(name).catch(() => null);
-    return JSON.stringify(own || themeFileFrom(theme()), null, 2);
+  // --- theme manager ---------------------------------------------------------
+  // The theme the manager shows: the staged pick, else the one in use.
+  selected() { return this.themeDraft ? this.themeDraft.name : settings().theme; }
+  inUse(name) { const s = settings(); return name === s.theme_dark || name === s.theme_light; }
+  // Yours to edit or delete: a theme file the Studio wrote or imported. Herdr's and presets copy first.
+  isOwn(name) { return ownedThemes().includes(name) && themes().some((t) => t.name === name) && name !== shared("layout"); }
+
+  goTo(view, cx) {
+    this.view = view; this.ask = null; this.leaving = false;
+    if (view !== "edit") { this.editing = null; setShared(K.editing, null); }
+    if (view === "import") cx.spawn((cx) => this.scanThemeFiles(cx));
+    cx.notify();
   }
 
-  saveLook(cx) {
-    const name = this.lookName.value().trim();
-    if (!name) return this.say("Give the look a name first", "error", cx);
-    const s = settings();
-    const look = {
-      name, theme_dark: s.theme_dark, theme_light: s.theme_light, layout: shared("layout"),
-      settings: { font: s.font_family, font_size: s.font_size, ui_font: s.ui_font_family, font_ligatures: s.font_ligatures, minimum_contrast: s.minimum_contrast },
-      cursor: this.cursorShown(),
-      // Rendered pictures are dropped as newer ones replace them, so a look keeps the recipe and re-renders.
-      glass: this.personal() ? { ...this.glass, bloom: "", frost: "" } : null,
+  // Opens a theme in the editor. It becomes the theme in use first, so the window shows every edit.
+  editTheme(name, cx) {
+    if (!this.isOwn(name)) return this.say(`${name} isn't yours to change: copy it first`, "error", cx);
+    const open = async () => {
+      this.editing = name; setShared(K.editing, name);
+      this.view = "edit"; this.ask = null; this.leaving = false;
+      cx.spawn((cx) => this.checkCursorHook(cx));
     };
-    setShared(K.looks, [...(shared(K.looks) || []).filter((l) => l.name !== name), look]);
-    this.lookName.set_value("");
-    this.say(`Saved look ${name}`, "success", cx);
+    if (settings().theme === name && !this.themeDraft) return cx.spawn((cx) => this.guard(cx, "Opening", open));
+    this.cancelAll(cx);
+    this.stageTheme(name, cx);
+    this.applyAll(cx, open);
   }
 
-  applyLook(look, cx) {
-    this.cancelAll(cx);
-    cx.spawn((cx) => this.guard(cx, `Applying ${look.name}`, async () => {
-      await this.writeSettings(look.settings);
-      const picks = [look.theme_light, look.theme_dark].filter(Boolean).map((name) => ["app.theme", { name }]);
-      // A look saved with its glass puts it on this layout; an older one (or one on Herdr's own layout,
-      // which takes no glass) switches to the layout it names, which carries its glass as it is now.
-      if (!(look.glass && this.personal()) && look.layout && look.layout !== shared("layout") && layouts().includes(look.layout)) return this.afterSwitch(["layout.switch", { name: look.layout }], picks);
-      for (const [c, a] of picks) run(c, a);
-      await this.waitFor(cx, () => settings().theme_dark === (look.theme_dark || settings().theme_dark) && settings().theme_light === (look.theme_light || settings().theme_light), 3000);
-      if (look.cursor) await this.writeCursor(look.cursor);
-      if (look.glass && this.personal()) { this.glassTheme = settings().theme; await this.writeGlass(cx, { ...GLASS_DEFAULT, ...look.glass }); }
-      this.say(`${look.name} is on`, "success", cx);
+  // Copies a theme (yours, Herdr's or a preset) to a new name you own, with whatever it holds beside
+  // its colors. With edit, opens the copy in the editor.
+  copyTheme(from, as, cx, edit = false) {
+    const name = slug(as || "");
+    if (!from || !name) return this.say("Give the copy a name", "error", cx);
+    if (themes().some((t) => t.name === name) || this.presets.some((p) => p.name === name)) return this.say(`A theme named ${name} already exists: pick another name`, "error", cx);
+    cx.spawn(async (cx) => {
+      let ok = false;
+      await this.guard(cx, `Copying ${from}`, async () => {
+      const th = themes().find((t) => t.name === from), p = this.presets.find((x) => x.name === from);
+      const file = (await this.readThemeFile(from).catch(() => null)) || (th ? themeFileFrom(th.colors) : p && p.file);
+      if (!file) throw new Error(`can't find theme ${from}`);
+      await this.writeThemeFile(name, file);
+      if (extrasOf(from)) setExtras(name, extrasOf(from));
+      if (!(await this.waitFor(cx, () => themes().some((t) => t.name === name)))) throw new Error(`Herdr hasn't picked up ${name} yet; try again in a moment`);
+      this.ask = null; this.copyName.set_value("");
+      this.say(`Copied ${from} to ${name}`, "success", cx);
+      ok = true;
+      });
+      if (ok && edit) this.editTheme(name, cx); else if (ok) this.stageTheme(name, cx);
+    });
+  }
+
+  deleteTheme(name, cx) {
+    if (!this.isOwn(name)) return this.say(`${name} isn't yours to delete`, "error", cx);
+    if (this.inUse(name)) return this.say(`${name} is in use: apply another theme first`, "error", cx);
+    cx.spawn((cx) => this.guard(cx, `Deleting ${name}`, async () => {
+      await fs.unlink(themePath(name));
+      setShared(K.owned, ownedThemes().filter((n) => n !== name));
+      setExtras(name, null);
+      if (this.themeDraft && this.themeDraft.name === name) this.themeDraft = null;
+      this.ask = null;
+      this.say(`Deleted ${name}`, "success", cx);
     }));
+  }
+
+  // Copies the theme's Herdr JSON (its colors), which any Herdr can import.
+  exportTheme(name, cx) {
+    cx.spawn(async (cx) => {
+      const th = themes().find((t) => t.name === name), p = this.presets.find((x) => x.name === name);
+      const file = (await this.readThemeFile(name).catch(() => null)) || (th ? themeFileFrom(th.colors) : p && p.file);
+      if (!file) return this.say(`can't find theme ${name}`, "error", cx);
+      cx.write_to_clipboard(JSON.stringify(file, null, 2));
+      this.say(`Copied ${name}'s JSON`, "success", cx);
+    });
+  }
+
+  // The editor's Save: write what's staged, then keep type, glass and cursor with the theme.
+  saveEdit(cx, then) {
+    const name = this.editing;
+    if (!name) return;
+    this.applyAll(cx, async () => {
+      const s = this.shown();
+      setExtras(name, {
+        type: { font: s.font_family, font_size: s.font_size, ui_font: s.ui_font_family, font_ligatures: s.font_ligatures, minimum_contrast: s.minimum_contrast },
+        // Rendered pictures are dropped as newer ones replace them, so the theme keeps the recipe and re-renders.
+        glass: this.personal() ? { ...this.glass, bloom: "", frost: "" } : null,
+        cursor: this.cursorShown(),
+      });
+      this.leaving = false;
+      this.say(`Saved ${name}`, "success", cx);
+      if (then) then();
+    });
   }
 
   revert(cx) {
@@ -736,68 +815,137 @@ export default class ThemeStudio extends View {
   }
 
   // --- view ------------------------------------------------------------------
+  // Two levels: the theme manager (and its import view), and the editor for one theme with its tabs.
   render(cx) {
     if (this.part === "button") return div();
     const t = theme();
     const s = this.shown();
     const overlay = props() && props().overlay;
-    const tab = { themes: () => this.themesTab(t, s, cx), colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), library: () => this.libraryTab(t, s, cx) }[this.tab]();
-    // A tab may pin a head (the Type preview) above the part that scrolls.
-    const head = tab.head, body = tab.head ? tab.body : tab;
+    const view = this.view === "edit"
+      ? { themes: null, colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx) }[this.tab]()
+      : this.view === "import" ? this.importView(t, s, cx) : this.managerView(t, s, cx);
+    // A view may pin a head (preview and its bar) above the part that scrolls.
+    const head = view.head, body = view.head ? view.body : view;
     const m = this.msg;
     const msgColor = !m ? t.dim : m.level === "error" ? t.blocked : m.level === "success" ? t.done : t.muted;
+    const title = this.view === "edit" ? `Editing ${this.editing}` : this.view === "import" ? "Import a theme" : "Theme Studio";
+    const sub = this.view === "edit"
+      ? `Changes show in the window; Save keeps them in ${this.editing}.`
+      : `In use: dark ${s.theme_dark} · light ${s.theme_light} · ${s.dark ? "dark" : "light"} mode now`;
+    const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     return v_flex().id("root").size_full().bg(t.popover).text_color(t.foreground).text_size(13)
-      .child(h_flex().px(14).pt(12).pb(8).items_center().justify_between()
-        .child(v_flex().child(div().text_size(14).font_semibold().child("Theme Studio"))
-          .child(div().text_size(11.5).text_color(t.muted).child(`${s.theme} · ${s.dark ? "dark" : "light"} · ${shared("layout")}`)))
+      .child(stop(h_flex().px(14).pt(12).pb(8).gap(8).items_center())
+        .when(this.view !== "themes", (el) => el.child(this.button("back", "← Themes", t, (_e, cx) => this.back(cx))))
+        .child(v_flex().flex_1().min_w(0).child(div().text_size(14).font_semibold().truncate().child(title))
+          .child(div().text_size(11.5).text_color(t.muted).truncate().child(sub)))
+        .when(this.view === "themes", (el) => el.child(this.button("import-view", "Import", t, (_e, cx) => this.goTo("import", cx))))
         .when(!!overlay, (el) => el.child(this.button("close", "Close", t, () => closeOverlay(overlay)))))
-      .child(h_flex().px(10).pb(8).gap(2).border_b_1().border_color(t.border)
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .children(TABS.map(([id, label]) => this.pill(`tab-${id}`, label, this.tab === id, t, (_e, cx) => { this.tab = id; setShared(K.tab, id); if (id === "library") cx.spawn((cx) => this.scanThemeFiles(cx)); if (id === "colors") cx.spawn((cx) => this.checkCursorHook(cx)); cx.notify(); }))))
-      .when(!!head, (el) => el.child(v_flex().px(14).pt(12).pb(10).border_b_1().border_color(t.border)
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(head)))
-      .child(v_flex().id("body").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(16)
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(body))
-      .child(h_flex().px(14).py(8).gap(10).items_center().justify_between().border_t_1().border_color(t.border)
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(msgColor).child(m ? m.text : ["themes", "type", "glass", "colors"].includes(this.tab) ? "Changes wait for Apply." : "Changes save as you make them."))
+      .when(this.view === "edit", (el) => el.child(stop(h_flex().px(10).pb(8).gap(2))
+        .children(TABS.map(([id, label]) => this.pill(`tab-${id}`, label, this.tab === id, t, (_e, cx) => { this.tab = id; setShared(K.tab, id); if (id === "colors") cx.spawn((cx) => this.checkCursorHook(cx)); cx.notify(); })))))
+      .child(div().border_b_1().border_color(t.border))
+      .when(!!head, (el) => el.child(stop(v_flex().px(14).pt(12).pb(10).border_b_1().border_color(t.border)).child(head)))
+      .child(stop(v_flex().id("body").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(16)).child(body))
+      .child(stop(h_flex().px(14).py(8).gap(10).items_center().justify_between().border_t_1().border_color(t.border))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(msgColor).child(m ? m.text : this.view === "edit" ? "Changes wait for Save." : "Pick a theme to preview it."))
         .when(!!shared(K.backup), (el) => el.child(this.button("revert", "Revert", t, (_e, cx) => this.revert(cx)))));
   }
 
-  // --- tabs ------------------------------------------------------------------
-  themesTab(t, s, cx) {
+  // Back from the editor asks first when there's something unsaved.
+  back(cx) {
+    if (this.view === "edit" && this.changeCount() > 0) { this.leaving = true; return cx.notify(); }
+    this.cancelAll(cx);
+    this.goTo("themes", cx);
+  }
+
+  changeCount() { const c = this.changes(); return c.type + c.colors + c.glass; }
+
+  // --- the theme manager -------------------------------------------------------
+  managerView(t, s, cx) {
     // A theme named like a layout belongs to that layout (Herdr offers it only there).
     const all = themes().filter((th) => th.name === shared("layout") || !layouts().includes(th.name));
-    const card = (id, name, c, active, onClick) => v_flex().id(id).w(132).rounded(8).overflow_hidden().cursor_pointer()
-      .border_1().border_color(active ? t.accent : t.border).when(active, (el) => el.shadow_sm())
-      .hover((st) => st.border_color(active ? t.accent : t.input))
-      .on_click(onClick)
-      .child(h_flex().h(40).p(6).gap(2).items_end().bg(c.background)
-        .children([1, 2, 3, 4, 5, 6].map((i) => div().flex_1().h(8 + ((i * 7) % 20)).rounded(2).bg(c.ansi[i]))))
-      .child(h_flex().px(8).py(5).justify_between().bg(t.raised)
-        .child(div().text_size(11.5).truncate().child(name))
-        .child(div().text_size(10.5).text_color(t.dim).child(c.light ? "light" : "dark")));
+    const sel = this.selected();
+    const card = (id, name, c, onClick) => {
+      const on = sel === name, used = this.inUse(name);
+      return v_flex().id(id).w(132).rounded(8).overflow_hidden().cursor_pointer()
+        .border_1().border_color(on ? t.accent : t.border).when(on, (el) => el.shadow_sm())
+        .hover((st) => st.border_color(on ? t.accent : t.input))
+        .on_click(onClick)
+        .child(h_flex().h(40).p(6).gap(2).items_end().bg(c.background)
+          .children([1, 2, 3, 4, 5, 6].map((i) => div().flex_1().h(8 + ((i * 7) % 20)).rounded(2).bg(c.ansi[i]))))
+        .child(h_flex().px(8).py(5).gap(4).justify_between().bg(t.raised)
+          .child(div().text_size(11.5).truncate().child(name))
+          .child(div().flex_none().text_size(10.5).text_color(used ? t.done : t.dim).child(used ? "● in use" : c.light ? "light" : "dark")));
+    };
     const asCard = (th) => ({ background: th.colors.background, ansi: Array.from({ length: 16 }, (_, i) => th.colors["ansi" + i]), light: th.light });
-    const pick = this.themeDraft ? this.themeDraft.name : s.theme;
-    const installed = all.map((th) => card(`th-${th.name}`, th.name, asCard(th), pick === th.name, (_e, cx) => this.stageTheme(th.name, cx)));
-    const extra = this.presets.filter((p) => !all.some((th) => th.name === p.name)).map((p) => {
+    const pick = (name) => (_e, cx) => { this.ask = null; this.stageTheme(name, cx); };
+    const mine = all.filter((th) => this.isOwn(th.name)), others = all.filter((th) => !this.isOwn(th.name));
+    const presets = this.presets.filter((p) => !all.some((th) => th.name === p.name)).map((p) => {
       const light = contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background);
-      return card(`pre-${p.name}`, p.name, { background: p.file.background, ansi: p.file.ansi, light }, pick === p.name, (_e, cx) => this.stageTheme(p.name, cx));
+      return card(`pre-${p.name}`, p.name, { background: p.file.background, ansi: p.file.ansi, light }, pick(p.name));
     });
-    const fixed = GLASS_COLORS.some((k) => String(this.glass[k] || "").startsWith("#"));
+    const grid = (cards) => h_flex().flex_wrap().gap(8).children(cards);
     const body = v_flex().gap(16)
-      .child(this.section("Your themes", t, h_flex().flex_wrap().gap(8).children(installed),
-        `Picking a ${s.dark ? "dark" : "light"} theme sets what Herdr shows in ${s.dark ? "dark" : "light"} mode. Now: dark ${s.theme_dark}, light ${s.theme_light}.` +
-        (fixed ? " Applying a theme also puts your custom glass colors back to the theme's own." : "")))
-      .when(extra.length > 0, (el) => el.child(this.section("More themes", t, h_flex().flex_wrap().gap(8).children(extra),
-        "Copied into themes/ when you apply one, so Herdr's Settings lists them too.")));
-    return { head: v_flex().gap(8).child(this.windowPreview(t)).child(this.applyBar(t)), body };
+      .child(this.section("Your themes", t, mine.length ? grid(mine.map((th) => card(`th-${th.name}`, th.name, asCard(th), pick(th.name))))
+        : div().text_color(t.dim).child("None yet. Copy one below to make it yours."),
+        "Yours to edit and delete. A theme holds its colors and, once saved in the editor, its type, glass and cursor too."))
+      .child(this.section("Herdr's and others", t, grid(others.map((th) => card(`th-${th.name}`, th.name, asCard(th), pick(th.name)))),
+        "Copy one to change it, so the original stays as it was."))
+      .when(presets.length > 0, (el) => el.child(this.section("Presets", t, grid(presets),
+        "Bundled with the Studio. Applying one adds it to themes/, so Herdr's Settings lists it too.")))
+      .child(this.section("Palette icon beside Settings", t, this.personal()
+        ? h_flex().child(this.button("sidebar-btn", hasFooterIcon(layout()) ? "Remove the icon" : "Add the icon", t, (_e, cx) => this.setButton(!hasFooterIcon(layout()), cx), !hasFooterIcon(layout())))
+        : h_flex().child(this.button("sidebar-copy", `Make my copy of ${shared("layout")} and add it`, t, (_e, cx) => this.makeCopy(cx, "colors"), true)),
+        this.personal()
+          ? "Herdr's Settings screen can't take extra sections, so the icon sits in the Settings row of the sidebar, or under Settings on the narrow rail."
+          : "Herdr's own layouts can't change, so the icon needs your own copy of this one. Herdr keeps updating everything else."))
+      .child(h_flex().child(this.button("reveal", "Show themes folder", t, (_e, cx) => cx.spawn(async () => { await exec("open", [`${HOME}/themes`]); }))));
+    return { head: v_flex().gap(8).child(this.windowPreview(t)).child(this.managerBar(t, s)), body };
+  }
+
+  // The selected theme's actions under the preview, or the copy or delete step in their place.
+  managerBar(t, s) {
+    const name = this.selected(), own = this.isOwn(name), staged = !!this.themeDraft;
+    const field = (state) => Input.new(state).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground);
+    if (this.ask && this.ask.kind === "copy") return h_flex().gap(6).items_center()
+      .child(div().flex_none().text_size(12).text_color(t.muted).child(`Copy ${this.ask.from} as`))
+      .child(field(this.copyName))
+      .child(this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }))
+      .child(this.button("copy-go", this.ask.edit ? "Copy and edit" : "Copy", t, (_e, cx) => this.copyTheme(this.ask.from, this.copyName.value(), cx, this.ask.edit), true));
+    if (this.ask && this.ask.kind === "delete") return h_flex().gap(6).items_center()
+      .child(div().flex_1().min_w(0).text_size(12).child(`Delete ${name}? Its file in themes/ goes too.`))
+      .child(this.button("ask-cancel", "Keep it", t, (_e, cx) => { this.ask = null; cx.notify(); }))
+      .child(this.button("delete-go", "Delete", t, (_e, cx) => this.deleteTheme(name, cx), true));
+    const copy = (edit) => (_e, cx) => { this.ask = { kind: "copy", from: name, edit }; this.copyName.set_value(`${slug(name)}-copy`); cx.notify(); };
+    return h_flex().gap(6).items_center()
+      .child(v_flex().flex_1().min_w(0)
+        .child(div().text_size(12.5).font_medium().truncate().child(name))
+        .child(div().text_size(11).text_color(t.dim).truncate().child(staged ? "Previewing: Apply to use it" : this.inUse(name) ? "In use" : own ? "Yours" : "Herdr's: copy to edit")))
+      .child(own ? this.button("edit", "Edit", t, (_e, cx) => this.editTheme(name, cx)) : this.button("copy-edit", "Copy to edit", t, copy(true)))
+      .child(this.button("copy", "Copy", t, copy(false)))
+      .child(this.button("export", "Copy JSON", t, (_e, cx) => this.exportTheme(name, cx)))
+      .when(own && !this.inUse(name), (el) => el.child(this.button("delete", "Delete", t, (_e, cx) => { this.ask = { kind: "delete", name }; cx.notify(); })))
+      .when(staged, (el) => el.child(this.button("apply-theme", "Apply", t, (_e, cx) => this.applyAll(cx), true)));
+  }
+
+  // --- import ---------------------------------------------------------------------
+  importView(t, s, cx) {
+    return v_flex().gap(16)
+      .when(this.found.length > 0, (el) => el.child(this.section("Theme files on this Mac", t,
+        h_flex().flex_wrap().gap(6).children(this.found.map((f) => this.pill(`found-${f.name}`, f.name, false, t, (_e, cx) => this.importFile(f.path, cx)))),
+        "iTerm2 themes in Downloads and on the Desktop. Click one to import it. The first time, macOS asks whether Herdr may read those folders.")))
+      .child(this.section("Paste or drop", t, v_flex().gap(6)
+        .child(div().id("import-drop").on_drop((e, cx) => this.importFile(e.paths && e.paths[0], cx))
+          .child(Textarea.new(this.importText).h(130).p(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12)))
+        .child(h_flex().gap(6)
+          .child(Input.new(this.importName).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+          .child(this.button("import-clip", "From clipboard", t, (_e, cx) => this.importTheme(cx, cx.read_from_clipboard() || "")))
+          .child(this.button("import", "Import", t, (_e, cx) => this.importTheme(cx), true))),
+        "iTerm2 (.itermcolors), Ghostty, kitty, Alacritty TOML, or Herdr JSON. A dropped file is named after itself. The theme joins Your themes; nothing changes until you apply it."));
   }
 
   colorsTab(t, s, cx) {
     const c = this.themeColors(), sel = this.pickTarget, g = this.glassShown();
-    const editing = ownedThemes().includes(s.theme) ? s.theme : `${slug(s.theme)}-custom`;
+    const editing = this.editing || (ownedThemes().includes(s.theme) ? s.theme : `${slug(s.theme)}-custom`);
     const swatch = (hex, size = 16) => div().size(size).rounded(4).bg(hex).border_1().border_color(t.input);
     const badge = (token) => {
       const p = PAIRS[token];
@@ -939,16 +1087,21 @@ export default class ThemeStudio extends View {
       .child(div().child(label));
   }
 
-  // "N changes not applied" with Cancel and Apply, under a tab's pinned preview. One Apply writes
-  // what every tab has staged, so the line names the tabs that have changes.
+  // The editor's bar under its preview: "N changes not saved" with Discard and Save. After Back with
+  // unsaved changes it asks instead. One Save writes what every tab has staged.
   applyBar(t) {
-    const c = this.changes(), n = c.theme + c.type + c.colors + c.glass;
-    const where = [["Themes", c.theme], ["Colors", c.colors], ["Type", c.type], ["Glass", c.glass]].filter(([, k]) => k).map(([w]) => w).join(", ");
+    const c = this.changes(), n = c.type + c.colors + c.glass;
+    const where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass]].filter(([, k]) => k).map(([w]) => w).join(", ");
+    if (this.leaving && n) return h_flex().gap(6).items_center()
+      .child(div().flex_1().min_w(0).text_size(12).child(`Save your changes to ${this.editing}?`))
+      .child(this.button("stay", "Keep editing", t, (_e, cx) => { this.leaving = false; cx.notify(); }))
+      .child(this.button("discard", "Discard", t, (_e, cx) => { this.cancelAll(cx); this.goTo("themes", cx); }))
+      .child(this.button("save-leave", "Save", t, (_e, cx) => this.saveEdit(cx, () => this.goTo("themes", cx)), true));
     return h_flex().gap(6).items_center()
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(n ? t.foreground : t.dim)
-        .child(n ? `${n} change${n > 1 ? "s" : ""} not applied (${where})` : "Pick below; nothing changes until Apply."))
-      .when(n > 0, (el) => el.child(this.button("cancel-all", "Cancel", t, (_e, cx) => this.cancelAll(cx))))
-      .child(this.button("apply-all", "Apply", t, (_e, cx) => this.applyAll(cx), n > 0));
+        .child(n ? `${n} change${n > 1 ? "s" : ""} not saved (${where})` : `Change anything below; Save keeps it in ${this.editing}.`))
+      .when(n > 0, (el) => el.child(this.button("cancel-all", "Discard", t, (_e, cx) => this.cancelAll(cx))))
+      .child(this.button("apply-all", "Save", t, (_e, cx) => this.saveEdit(cx), n > 0));
   }
 
   typeTab(t, s, cx) {
@@ -1105,40 +1258,6 @@ export default class ThemeStudio extends View {
         .child(this.button("hex-set", "Set", t, (_e, cx) => this.stageHex(this.hex.value(), cx), true))
         .when(!!reset, (el) => el.child(this.button("hex-reset", "Reset", t, (_e, cx) => reset(cx)))))
       .when(!!note, (el) => el.child(div().text_size(11.5).text_color(t.dim).line_height("17px").child(note)));
-  }
-
-  libraryTab(t, s, cx) {
-    const looks = shared(K.looks) || [];
-    return v_flex().gap(16)
-      .child(this.section("Saved looks", t, v_flex().gap(8)
-        .child(h_flex().flex_wrap().gap(6).children(looks.length ? looks.map((l) =>
-          h_flex().gap(2).child(this.pill(`look-${l.name}`, l.name, false, t, (_e, cx) => this.applyLook(l, cx)))
-            .child(this.button(`look-del-${l.name}`, "×", t, (_e, cx) => { setShared(K.looks, looks.filter((x) => x.name !== l.name)); cx.notify(); })))
-          : [div().text_color(t.dim).child("None yet.")]))
-        .child(h_flex().gap(6)
-          .child(Input.new(this.lookName).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-          .child(this.button("look-save", "Save current", t, (_e, cx) => this.saveLook(cx), true))),
-        "A look is everything at once: dark and light themes, type, glass and cursor. Applying one puts its glass on this layout."))
-      .when(this.found.length > 0, (el) => el.child(this.section("Theme files on this Mac", t,
-        h_flex().flex_wrap().gap(6).children(this.found.map((f) => this.pill(`found-${f.name}`, f.name, false, t, (_e, cx) => this.importFile(f.path, cx)))),
-        "iTerm2 themes in Downloads and on the Desktop. Click one to import and use it. The first time, macOS asks whether Herdr may read those folders.")))
-      .child(this.section("Import a theme", t, v_flex().gap(6)
-        .child(div().id("import-drop").on_drop((e, cx) => this.importFile(e.paths && e.paths[0], cx))
-          .child(Textarea.new(this.importText).h(130).p(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12)))
-        .child(h_flex().gap(6)
-          .child(Input.new(this.importName).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-          .child(this.button("import-clip", "From clipboard", t, (_e, cx) => this.importTheme(cx, cx.read_from_clipboard() || "")))
-          .child(this.button("import", "Import", t, (_e, cx) => this.importTheme(cx), true))),
-        "Paste or drop a theme file: iTerm2 (.itermcolors), Ghostty, kitty, Alacritty TOML, or Herdr JSON. A dropped file is named after itself."))
-      .child(this.section("Palette icon beside Settings", t, this.personal()
-        ? h_flex().child(this.button("sidebar-btn", hasFooterIcon(layout()) ? "Remove the icon" : "Add the icon", t, (_e, cx) => this.setButton(!hasFooterIcon(layout()), cx), !hasFooterIcon(layout())))
-        : h_flex().child(this.button("sidebar-copy", `Make my copy of ${shared("layout")} and add it`, t, (_e, cx) => this.makeCopy(cx, "library"), true)),
-        this.personal()
-          ? "Herdr's Settings screen can't take extra sections, so the icon sits in the Settings row of the sidebar, or under Settings on the narrow rail."
-          : "Herdr's own layouts can't change, so the icon needs your own copy of this one. Herdr keeps updating everything else."))
-      .child(this.section("This theme", t, h_flex().gap(6)
-        .child(this.button("copy-json", "Copy theme JSON", t, (_e, cx) => cx.spawn(async (cx) => { cx.write_to_clipboard(await this.currentThemeJSON()); this.say(`Copied ${settings().theme}`, "success", cx); })))
-        .child(this.button("reveal", "Show themes folder", t, (_e, cx) => cx.spawn(async () => { await exec("open", [`${HOME}/themes`]); })))));
   }
 
   // --- parts -----------------------------------------------------------------

@@ -13,19 +13,33 @@ second or two. A Revert button puts back how things were before the Studio's fir
 A window 520×720 px (`mod.json` overlay, `kind: "window"`), on the `popover` background,
 `foreground` text, base type 13px. Top to bottom:
 
-- **Title bar**, 14px side padding, 12px above, 8px below: "Theme Studio" 14px semibold over
-  a 11.5px `muted` line `<theme> · dark|light · <layout>`; a **Close** button on the right.
-  Pressing anywhere here drags the window.
-- **Tabs**: Themes, Colors, Type, Glass, Library, as pills 12.5px, radius 7, 10px side
-  padding. The chosen one is `accent` with `accent_foreground` text; the rest have a
-  `border` outline. A 1px `border` line below.
+Two levels: the **theme manager** (with an **import** view), and the **editor** for one theme.
+
+- **Title bar**, 14px side padding, 12px above, 8px below: a 14px semibold title over a 11.5px
+  `muted` line, a **Close** button on the right. Manager: "Theme Studio", `In use: dark <name>
+  · light <name> · <mode> mode now`, and an **Import** button. Import: **← Themes**, "Import a
+  theme". Editor: **← Themes**, "Editing <name>", "Changes show in the window; Save keeps them
+  in <name>." Pressing anywhere here drags the window.
+- **Tabs** (editor only): Colors, Type, Glass, as pills 12.5px, radius 7, 10px side padding.
+  The chosen one is `accent` with `accent_foreground` text; the rest have a `border` outline.
+  A 1px `border` line below.
 - **Body**, scrolling, 14px padding, 16px between sections. Each section has an 11px
   semibold uppercase `muted` label and an optional 11.5px `dim` note under it.
-  - **Themes**: cards 132px wide, radius 8: a 40px swatch strip on the theme's
-    background with six bars in ansi 1–6 (heights 8–27px), over a `raised` caption row with
-    the name and "dark"/"light". The current theme's card has an `accent` border. "Your
-    themes" is `themes()` minus themes named like a layout (Herdr offers those only on
-    their layout); "More themes" is the bundled presets not yet installed.
+  - **Manager**: pinned above, the mock window of the picked theme and its action row: name
+    and state ("Previewing: Apply to use it", "In use", "Yours", "Herdr's: copy to edit"), then
+    **Edit** (yours) or **Copy to edit**, **Copy**, **Copy JSON**, **Delete** (yours, not in
+    use), **Apply** (when previewing). Copy swaps the row for a name input with Cancel and
+    Copy; Delete for "Delete <name>? Its file in themes/ goes too." with Keep it and Delete.
+    Below, cards 132px wide, radius 8: a 40px swatch strip on the theme's background with six
+    bars in ansi 1–6 (heights 8–27px), over a `raised` caption row with the name and
+    "dark"/"light", or "● in use" in `done`. The picked card has an `accent` border. Sections:
+    Your themes (files the Studio wrote or imported), Herdr's and others (the rest of
+    `themes()`, minus themes named like a layout, which Herdr offers only on that layout),
+    Presets (bundled, not yet installed), Palette icon beside Settings, and **Show themes
+    folder**.
+  - **Import**: `.itermcolors` files found in Downloads and on the Desktop as pills; a 130px
+    textarea that also takes a dropped file, a name input, **From clipboard**, **Import**. An
+    import lands in Your themes, picked but not applied, and the view goes back to the manager.
   - **Colors**: pinned above the scrolling part, the mock window (below) and the apply row.
     Then a dim line naming the theme file it saves to, and groups (Surfaces, Lines, Text,
     Accent, Agent status) of rows: 16px swatch, name, a contrast badge where it applies,
@@ -76,16 +90,9 @@ A window 520×720 px (`mod.json` overlay, `kind: "window"`), on the `popover` ba
     one opens the color editor under its row. Sliders are a 4px `input` groove, `accent`
     fill, a 24×16 `foreground` pill thumb ringed in `accent`, centered on the groove
     (`ml(-12).mt(-6)`), the value on the right of the label.
-  - **Library**: Saved looks (pills with a × each, a name input, **Save current**). A look holds
-    the dark and light theme picks, the Type settings, the cursor shape and blink, and the glass
-    (without rendered picture paths: Bloom and Frosted are rendered again on apply, since old
-    renders get deleted). Applying one cancels staged changes and puts its glass on the shown
-    personal layout; a look without glass, or on Herdr's own layout, switches to its layout. Import a
-    theme (a 130px textarea that also takes a dropped file, a name input, **From clipboard**,
-    **Import**); Sidebar button (**Add to sidebar** / **Remove from sidebar**); This theme
-    (**Copy theme JSON**, **Show themes folder**).
 - **Status bar**, 1px `border` line above: the last result in 12px (`done` for success,
-  `blocked` for errors, `muted` while working; "Changes save as you make them." at rest),
+  `blocked` for errors, `muted` while working; at rest "Pick a theme to preview it." or, in
+  the editor, "Changes wait for Save."),
   and **Revert** on the right once a backup exists.
 
 On a personal layout with the icon: in the sidebar footer's Settings row, to the right of
@@ -114,10 +121,20 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
 - **Type** writes `settings.json` (`font`, `font_size`, `ui_font`, `font_ligatures`,
   `minimum_contrast`), merged key by key through `writeTextFile(path, text, expected)` with
   one retry if the file changed under it.
-- **Staging**: Themes, Type, Colors and Glass controls stage into drafts (theme pick, settings,
-  theme tokens, glass); previews, sliders and the picker show them. **Apply** writes them in one
-  guarded task: the theme pick, `settings.json`, then the theme file (all tokens in one write),
-  then one `layout.set` of the whole personal tree. Cancel drops them all.
+- **A Studio theme** is its Herdr theme file plus, once saved in the editor, `{ type, glass,
+  cursor }` in shared `theme-studio.themes` under its name (glass without rendered picture paths:
+  Bloom and Frosted render again on apply, since old renders get deleted). Yours = names in
+  `theme-studio.owned` that `themes()` lists; Herdr's and presets are copied before editing, so
+  an original can't be changed by accident. Copy carries the extras along; Delete removes the
+  file, the name and the extras, and refuses a theme in use.
+- **Staging**: the manager's pick, and the editor's Type, Colors and Glass controls, stage into
+  drafts (theme pick, settings, theme tokens, glass, cursor); previews, sliders and the picker
+  show them. Apply (manager) or Save (editor) writes them in one guarded task: the theme pick
+  with its saved type and cursor, `settings.json`, the theme file (all tokens in one write),
+  then one `layout.set` of the whole personal tree (always after a new theme, so the file's root
+  theme names it). Save then stores the theme's type, glass and cursor. Edit applies the theme
+  first, so the window is the preview. Discard drops the drafts; ← Themes with drafts asks Save,
+  Discard or Keep editing. The editor survives a reopen (shared `theme-studio.editing`).
 - **Cursor shape** isn't a Herdr setting; terminals take DECSCUSR (`ESC [ n SP q`: block 2,
   underline 4, bar 6, blinking one less). Apply writes `cursor-shape` (the number) and
   `cursor.zsh` (a zsh precmd hook, only when `TERM_PROGRAM=ghostty`, that sends it) to the app
@@ -134,8 +151,8 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   last change; the preview shows it before Apply. Re-rendered when the theme changes; old
   renders are deleted, all of them when the background leaves Bloom. **Make my copy** runs `layout.clone`, which
   switches layouts and so closes the window; a detached `herdr-app do` script reopens it,
-  and the new copy (seeing shared `theme-studio.add-button`) adds the palette icon. Library
-  offers the same copy for the icon alone.
+  and the new copy (seeing shared `theme-studio.add-button`) adds the palette icon. The
+  manager offers the same copy for the icon alone.
 - **Frosted wallpaper** is rebuilt when the window opens and the wallpaper path has changed,
   or on Rebuild. Old `studio-frost-*.jpg` files are deleted.
 - When the theme changes anywhere (a 1 s check), translucent chrome and cards are rewritten
@@ -144,12 +161,14 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   the saved dark and light themes, and switches back to the saved layout (via the detached
   script when that switch would close the window). Themes and layout copies stay.
 - **Commands**: `herdr-app do theme-studio.<command>` or `"theme-studio:<command>"` in
-  keys.json: `tab=`, `theme=`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
+  keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>`,
+  `delete-theme=<name>`, `export=<name>`, `view=themes|import`, `back`, `save`, `discard`,
+  `tab=colors|type|glass`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
   `size=`, `stage=<key>:<value>`, `glass-color=<key>:<hex|>`, `pick=<tok:token|glass:key>`,
-  `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply`, `cancel` (every tab's drafts),
+  `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply` (Save in the editor), `cancel`,
   `glass=Solid|Tinted|Frosted`, `bg=`, `opacity|chrome|radius|gap|angle=<n>`, `behind=`
   (the glass ones stage), `button=on|off`, `copy-layout`, `import=<name>` (clipboard),
-  `import-file=<path>`, `look=`, `save-look=`, `delete-look=`, `revert`.
+  `import-file=<path>`, `revert`.
 
 ## Built from
 
@@ -242,7 +261,7 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   window turns Tokyo Night.
 - `color=accent:#bb9af7` shows the new accent on the focused pane's border within 3 s.
 - `size=15` and `font=Menlo` change the terminal text.
-- On `main`, Library offers a copy; after it the window reopens on `main-studio` with a
+- On `main`, the manager's Palette icon section offers a copy; after it the window reopens on `main-studio` with a
   palette icon beside Settings that opens the Studio.
 - `glass=Frosted` gives a blurred-wallpaper background, translucent sidebar and terminals,
   and rounded pane corners with nothing square showing at any corner.

@@ -35,7 +35,7 @@ Herdr mods have no update channel, so check the
 [tags](https://github.com/agentic-tool-labs/herdr-theme-studio/tags) for a newer version. To update, tell
 your agent: "Update Theme Studio from github.com/agentic-tool-labs/herdr-theme-studio: replace my
 `mods/theme-studio/` folder with the repo's." Say "replace": by default an agent adds a second copy
-under a new name rather than overwrite. Your themes, settings, layouts and saved looks live outside
+under a new name rather than overwrite. Your themes (with their saved type and glass), settings and layouts live outside
 that folder and stay. Close and reopen the Studio afterwards.
 
 ## Opening it
@@ -44,28 +44,44 @@ that folder and stay. Close and reopen the Studio afterwards.
 - **The palette icon beside Settings** in the sidebar footer. Herdr's Settings screen can't take
   extra sections (Herdr rewrites it on every start), and its sidebar mod and built-in layouts can't
   be edited. So the Studio makes your own copy of the layout (`<layout>-studio`) and a patched
-  clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. Library →
-  Palette icon adds or removes it. On the narrow sidebar rail it gets its own row under Settings.
+  clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. The theme
+  manager's Palette icon section adds or removes it. On the narrow sidebar rail it gets its own row under Settings.
 
-## What each tab does
+## How it's laid out
+
+**The theme manager** is what opens. Pick a theme card to preview it in the mock window, then
+**Apply** to use it. Under the preview, the picked theme's actions: **Edit** (yours only), **Copy**
+or **Copy to edit**, **Copy JSON** (Herdr's theme format, for sharing), **Delete** (yours, when it's
+not in use). Your themes come first; Herdr's own and the bundled presets are locked, so you copy
+one to change it and the original stays as it was. **Import** (top right) opens the import view:
+iTerm2 (`.itermcolors`), Ghostty, kitty, Alacritty or Herdr JSON by paste, clipboard or dropping
+the file, plus any `.itermcolors` in Downloads and on the Desktop. An import joins Your themes;
+nothing changes until you apply it.
+
+**A theme holds everything:** its colors (`themes/<name>.json`) and, once saved in the editor,
+its type, glass and cursor (kept in shared state beside it). Applying a theme brings all of it.
+A theme with only colors (Herdr's, a preset, a fresh import) leaves type and glass as they are,
+and puts glass colors set by hex back to the theme's own. Picking a dark theme sets dark mode's
+theme, a light one light mode's.
+
+**The editor** opens from Edit, with three tabs. The theme becomes the one in use first, so the
+real window shows every change; a mock window above shows them too. Nothing is kept until
+**Save**. **Discard** drops the changes, and **← Themes** with unsaved changes asks first.
 
 | Tab | Writes | Notes |
 |---|---|---|
-| Themes | `app.theme`; presets copied to `themes/<name>.json` | Picking a dark theme sets dark mode's theme, a light one light mode's. Applying one also puts glass colors you set by hex (glows, gradient, behind panes) back to the theme's own, so the whole window follows it. 12 presets ship in `presets/` (sources in `presets/SOURCES.md`). |
-| Colors | `themes/<name>.json`; Behind panes goes on the layout | Every theme color (the theme's own, not Glass's see-through versions), with WCAG contrast badges on text tokens. Click one to edit it with the color picker. Also the color behind panes, and the cursor: color (theme) plus shape (Block, Underline, Bar) and blink. Editing a theme the Studio didn't make forks it to `<name>-custom` first. Herdr only rereads a theme file when it's picked, so the Studio re-picks after each write. |
+| Colors | `themes/<name>.json`; Behind panes goes on the layout | Every theme color, with WCAG contrast badges on text tokens. Click one to edit it with the color picker. Also the color behind panes, and the cursor: color (theme) plus shape (Block, Underline, Bar) and blink. Herdr only rereads a theme file when it's picked, so the Studio re-picks after each write. |
 | Type | `settings.json` (`font`, `font_size`, `ui_font`, `font_ligatures`, `minimum_contrast`) | A sample terminal shows picks at once (font, size, ligatures, contrast lift). Herdr rereads `settings.json` only every few seconds (up to about 10), so on your own layout copy fonts and size also go on the layout for 15 s and show at once. Fonts render in their own face. "Open fonts folder" is for `.ttf`/`.otf` files Herdr loads without installing them system-wide. |
 | Glass | the shown layout, through `layout.set` | Herdr's own layouts refuse these fields, so the tab first makes your copy (`<layout>-studio`). Background: theme, a gradient in two colors you pick, Bloom (a base color with three soft glows, rendered into a picture), frosted wallpaper or image; the glass surfaces' opacity (their color is the theme's chrome and terminal color); pane radius, the margin around the panes, and the gap between them. |
-| Library | shared state, `themes/` | Saved looks (themes, type, glass and cursor together; applying one puts its glass on the shown layout); theme import from iTerm2 (`.itermcolors`), Ghostty, kitty, Alacritty or Herdr JSON by paste, clipboard or dropping the file; copy theme JSON. |
 
-**Change, then Apply:** Themes, Type, Colors and Glass all stage their changes. Themes, Colors and Glass show
-them in a small mock window; one **Apply** writes everything staged on any tab, and Cancel drops it.
+12 presets ship in `presets/` (sources in `presets/SOURCES.md`); applying one copies it into `themes/`.
 
 **Revert** (bottom right, after the first change) restores `settings.json`, the layout and the
 theme picks from the snapshot taken before the Studio's first write. Themes and layout copies
 it made stay on disk.
 
 **Importing iTerm2 themes:** `.itermcolors` files in Downloads and on the Desktop are listed in
-Library for one click. You can also drop a file on the import box, or copy it in Finder and press
+the import view for one click. You can also drop a file on the import box, or copy it in Finder and press
 From clipboard. Binary and XML files both work. The first time, macOS asks whether Herdr may read
 Downloads or Desktop. That prompt can hide behind other windows, and until you answer it the
 import seems to do nothing.
@@ -94,7 +110,7 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 - **True window transparency** isn't possible from a mod. Herdr has no setting for it:
   [herdr-app#190](https://github.com/herdrdev/herdr-app/issues/190).
 - A layout switch closes Herdr's overlay windows, so steps that span one (making the copy,
-  applying a look on another layout, Revert) run as a detached `herdr-app do` script that also
+  Revert) run as a detached `herdr-app do` script that also
   reopens the Studio.
 
 ## Commands
@@ -102,12 +118,12 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
 with the Studio open:
 
-`tab=<themes|colors|type|glass|library>` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
-staged until `apply` (`cancel` drops them): `theme=<name>` · `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
+Manager: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import` ·
+editor: `tab=<colors|type|glass>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
+staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
-`button=on|off` · `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `look=<name>` ·
-`save-look=<name>` · `delete-look=<name>` · `revert`
+`button=on|off` · `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
 ## Checks
 
