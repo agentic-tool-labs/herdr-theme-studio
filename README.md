@@ -56,11 +56,11 @@ that folder and stay. Close and reopen the Studio afterwards.
 
 Every view has the same shape: a big preview of the whole window on the left, the controls on the
 right, and one bar along the bottom that says what's going on and holds the buttons that act on it.
-The screenshots are of for-ghost-green, a custom theme with a green Bloom background.
+The screenshots are of dune, with a picture as its window background.
 
 ### The theme library
 
-![The theme library, with for-ghost-green in use](docs/screenshots/manager.png)
+![The theme library, with dune in use](docs/screenshots/manager.png)
 
 This is what opens. Click a theme to preview it on the left; nothing changes in the real window
 until **Use it**. Search by name, filter to Dark or Light, and the sections run Your themes,
@@ -138,7 +138,7 @@ The sample terminal under the preview shows each pick at once. Herdr rereads `se
 
 #### Glass
 
-![Glass tab, with a Bloom background](docs/screenshots/glass.png)
+![Glass tab, with a picture background](docs/screenshots/glass.png)
 
 | Option | What it changes |
 |---|---|
