@@ -400,6 +400,24 @@ export function bloomSpec(base, glows, intensity) {
 }
 
 /** Reads the glass settings back out of a layout tree (inverse of applyGlass, best effort). */
+// Auto-hide: the sidebar folded to Herdr's rail (`rail` px), or hidden outright (mode "hidden"),
+// and an empty floating block (the Studio's "edge" part) that watches the pointer and opens it.
+// The block's props carry the mode. Off takes the watcher away and opens the sidebar at `wide` px.
+export const EDGE_ID = "studio-edge";
+export const autoHideMode = (tree) => { const f = ((tree && tree.floating) || []).find((b) => b.id === EDGE_ID); return f ? f.content.props.mode || "rail" : null; };
+export function withAutoHide(tree, on, rail, wide, mode = "rail") {
+  const t = JSON.parse(JSON.stringify(tree)), sb = findNode(t, "sidebar");
+  if (!sb) return null;
+  delete sb.hidden;
+  if (on && mode === "hidden") sb.hidden = true;
+  sb.size = { px: on && mode === "rail" ? rail : wide };
+  if (on && mode === "rail") sb.min = Math.min(sb.min ?? rail, rail); // narrower than Herdr's own rail
+  t.floating = (t.floating || []).filter((f) => f.id !== EDGE_ID);
+  if (on) t.floating.push({ id: EDGE_ID, content: { mod: "theme-studio", props: { part: "edge", mode } }, edge: "left", align: "end" });
+  if (!t.floating.length) delete t.floating;
+  return t;
+}
+
 export function readGlass(tree) {
   const g = { ...GLASS_DEFAULT };
   if (!tree) return g;
@@ -435,7 +453,7 @@ export const isMono = (f) => MONO.test(f);
 // --- Sidebar button ----------------------------------------------------------------
 
 export const BUTTON_ID = "theme-studio-button";
-const findNode = (n, id) => (n.id === id ? n : (n.children || []).reduce((f, c) => f || findNode(c, id), null));
+export const findNode = (n, id) => (n.id === id ? n : (n.children || []).reduce((f, c) => f || findNode(c, id), null));
 export const hasButton = (tree) => !!(tree && findNode(tree, BUTTON_ID));
 
 /** Copy of a layout tree with the Theme Studio row added just above the sidebar footer (on) or

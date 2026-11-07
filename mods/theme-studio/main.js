@@ -3,11 +3,11 @@
 // It edits the files Herdr already redraws from: themes/*.json, settings.json, and the shown
 // layout (through layout.set). Opened with ctrl-shift-y (mod.open theme-studio).
 
-import { View, div, image } from "gpui-kit";
+import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Popup, InputState, Input, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes, settings, fonts, layout, layouts, nextCommand, shared, setShared, run, exec, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode } from "./lib.js";
 
 const HOME = appHome();
 const MOD = `${HOME}/mods/theme-studio`;
@@ -34,6 +34,16 @@ const HOLD_MS = 15000;
 const LIVE_LOOK = { font: "font_family", font_size: "font_size", ui_font: "ui_font_family" };
 // The Studio opens on the theme manager; Edit opens a theme in the editor, with these tabs.
 const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"], ["agents", "Agents"]];
+// svg() paths are relative to the app home.
+const MOD_REL = "mods/theme-studio", ICONS = `${MOD_REL}/icons`;
+// Names people read; the token stays in the picker under the name.
+const TOKEN_LABELS = { background: "Terminal bg", canvas: "Canvas", chrome: "Chrome", surface: "Surface", popover: "Popover", raised: "Raised", hover: "Hover", selected: "Selected",
+  border: "Border", input: "Input border", ring: "Focus ring", foreground: "Text", terminal_foreground: "Terminal text", muted: "Muted text", dim: "Dim text",
+  accent: "Accent", accent_foreground: "On accent", solid: "Solid button", solid_foreground: "On solid", selection: "Selection", cursor: "Cursor",
+  working: "Working", blocked: "Needs you", done: "Done", idle: "Idle", unknown: "Unknown" };
+// Terminal colors come from the theme file itself: there's nothing for Reset to go back to.
+const TERMINAL_TOKENS = ["background", "terminal_foreground", "selection", "cursor"];
+const GLASS_LABELS = { from: "Gradient from", to: "Gradient to", bloomBase: "Bloom base", glowA: "Glow 1", glowB: "Glow 2", glowC: "Glow 3", behind: "Behind panes" };
 // The agents list: density presets (Comfortable is Herdr's own) and the sliders' ranges.
 const AGENT_PRESETS = {
   Comfortable: { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5 },
@@ -90,9 +100,11 @@ export default class ThemeStudio extends View {
     // An older sidebar-row block (props.part "button") is a second copy of this mod: it draws nothing.
     this.part = props() && props().part;
     if (this.part === "button") return;
+    if (this.part === "edge") return this.watchEdge(cx);
     this.tab = TABS.some(([id]) => id === shared(K.tab)) ? shared(K.tab) : "colors";
-    // "themes" (the manager), "import", or "edit" (this.editing in the tabs). An editor survives a reopen.
-    this.editing = ownedThemes().includes(shared(K.editing)) ? shared(K.editing) : null;
+    // "themes" (the library) or "edit" (this.editing in the tabs). An editor survives a reopen.
+    // Herdr's own themes open in the editor too: the first Save makes the person's copy.
+    this.editing = shared(K.editing) && themes().some((th) => th.name === shared(K.editing)) ? shared(K.editing) : null;
     this.view = this.editing ? "edit" : "themes";
     this.ask = null; // the manager's inline step: { kind: "copy", from, edit } or { kind: "delete", name }
     this.leaving = false; // Back pressed in the editor with unsaved changes
@@ -106,6 +118,12 @@ export default class ThemeStudio extends View {
     this.themeDraft = null; // { name, preset?, colors } picked on Themes, not yet applied
     this.pickTarget = null; // the color the picker edits: "tok:<token>" or "glass:<key>"
     this.fontQuery = "";
+    this.importing = false; // the import panel open on the library
+    this.menuOpen = false; this.themeMenuOpen = false;
+    this.open = {}; // folded sections that are open
+    this.themeQuery = ""; this.themeFilter = "all";
+    this.themeSearch = InputState.new({ placeholder: "Find a theme" });
+    this.themeSearch.on("change", (_e, cx) => { this.themeQuery = this.themeSearch.value(); cx.notify(); });
 
     this.hex = InputState.new({ placeholder: "#rrggbb or #rrggbbaa" });
     this.hex.on("submit", (_e, cx) => this.stageHex(this.hex.value(), cx));
@@ -176,14 +194,15 @@ export default class ThemeStudio extends View {
   // tab=<id> · theme=<name> · color=<token>:<hex> · reset=<token> · glass-color=<key>:<hex|> · pick=<tok:token|glass:key> · cursor=block|underline|bar · cursor-blink=on|off · font=<family> · ui-font=<family>
   // size=<n> · glass=Solid|Tinted|Frosted · bg=theme|gradient|frost|image · opacity|chrome|radius|gap|angle=<n>
   // stage=<key>:<value> · apply · cancel (Type and Glass) · font-menu=terminal|ui|close (Type tab) · import=<name> (from the clipboard) · import-file=<path> · behind=<color> · button=on|off · copy-layout · revert
-  // view=themes|import · select=<name> · edit=<name> · copy=<from>:<new> · delete-theme=<name> · export=<name> · save · discard
+  // menu=more|theme|close (the ⋯ menus) · autohide=rail|hidden|off · view=themes|import|settings · select=<name> · edit=<name> · copy=<from>:<new> · delete-theme=<name> · export=<name> · save · discard
   command(c, cx) {
     const i = c.indexOf("=");
     const verb = i < 0 ? c : c.slice(0, i), arg = i < 0 ? "" : c.slice(i + 1);
     const num = Number(arg);
     if (verb === "tab" && TABS.some(([id]) => id === arg)) { this.tab = arg; setShared(K.tab, arg); }
     else if (verb === "back" || (verb === "view" && arg === "themes" && this.view === "edit")) this.back(cx);
-    else if (verb === "view" && ["themes", "import"].includes(arg)) this.goTo(arg, cx);
+    else if (verb === "view" && ["themes", "import", "settings"].includes(arg)) this.goTo(arg, cx);
+    else if (verb === "autohide") arg === "off" ? this.setAutoHide(false, cx) : this.setAutoHide(true, cx, arg === "hidden" ? "hidden" : "rail");
     else if (verb === "theme" || verb === "select") this.stageTheme(arg, cx);
     else if (verb === "edit") this.editTheme(arg, cx);
     else if (verb === "copy") { const [from, as] = arg.split(":"); this.copyTheme(from, as, cx); }
@@ -200,6 +219,7 @@ export default class ThemeStudio extends View {
     else if (verb === "size" && num) this.setSetting({ font_size: num }, `Text size ${num}`, cx);
     else if (verb === "stage") { const [k, ...r] = arg.split(":"), x = r.join(":"); this.stage(k, x === "true" ? true : x === "false" ? false : isNaN(+x) ? x : +x, cx); }
     else if (verb === "apply") this.view === "edit" ? this.saveEdit(cx) : this.applyAll(cx);
+    else if (verb === "menu") { this.menuOpen = arg === "more"; this.themeMenuOpen = arg === "theme"; }
     else if (verb === "font-menu") { this.fontOpen = arg === "close" ? null : arg === "ui" ? "ui_font" : "font"; cx.notify(); }
     else if (verb === "cancel") this.cancelAll(cx);
     else if (verb === "glass" && GLASS_PRESETS[arg]) this.stageGlass({ ...GLASS_PRESETS[arg] }, cx);
@@ -224,7 +244,7 @@ export default class ThemeStudio extends View {
     if (this.busy) return this.say("Still finishing the last change; try again in a moment", "info", cx);
     this.busy = true;
     this.say(label + "…", "info", cx);
-    try { await work(); }
+    try { await work(cx); } // work gets this call's cx: one captured earlier is dead by now
     catch (e) { this.say(String(e && e.message ? e.message : e), "error", cx); }
     finally { this.busy = false; cx.notify(); }
   }
@@ -292,10 +312,11 @@ export default class ThemeStudio extends View {
   }
 
   // The theme being edited must be a file the Studio owns; anything else is forked to <name>-custom first.
-  async editableTheme(cx) {
+  // `fresh` (the editor's copy of one of Herdr's themes) never reuses an older fork: it numbers a new one.
+  async editableTheme(cx, fresh = false) {
     const name = settings().theme;
     if (ownedThemes().includes(name) && (await readTextFile(themePath(name)))) return name;
-    const fork = `${slug(name)}-custom`;
+    const fork = fresh ? this.forkName(name) : `${slug(name)}-custom`;
     if (!(await readTextFile(themePath(fork)))) {
       const src = themes().find((t) => t.name === name);
       if (!src) throw new Error(`can't find theme ${name}`);
@@ -306,9 +327,17 @@ export default class ThemeStudio extends View {
     return fork;
   }
 
+  // The editor's theme as one the Studio owns: one of Herdr's becomes the person's copy here.
+  async ownEditing(cx) {
+    if (ownedThemes().includes(this.editing)) return this.editing;
+    this.editing = await this.editableTheme(cx, true);
+    setShared(K.editing, this.editing);
+    return this.editing;
+  }
+
   // Writes staged tokens (hex, or null to reset) into the theme being edited, in one write.
   async writeColors(cx, draft) {
-    const name = this.view === "edit" && this.editing ? this.editing : await this.editableTheme(cx);
+    const name = this.view === "edit" && this.editing ? await this.ownEditing(cx) : await this.editableTheme(cx);
     let file = await this.readThemeFile(name);
     for (const [token, hex] of Object.entries(draft)) file = setToken(file, token, hex);
     await this.writeThemeFile(name, file);
@@ -569,7 +598,7 @@ export default class ThemeStudio extends View {
       this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {};
       this.pickFor = null; this.syncControls();
       this.say(`Applied ${done.join(", ")}`, "success", cx);
-      if (after) await after();
+      if (after) await after(cx);
     }));
   }
 
@@ -669,11 +698,13 @@ export default class ThemeStudio extends View {
   // Re-renders the staged bloom shortly after the last change, so the preview shows the real picture.
   scheduleBloom(cx) {
     const gen = (this.bloomGen = (this.bloomGen || 0) + 1);
+    this.bloomPending = true; // the preview draws the glows itself until the picture is ready
     cx.timer.after(250, (cx) => {
-      if (gen !== this.bloomGen || this.glassShown().bg !== "bloom") return;
+      if (gen !== this.bloomGen) return;
+      if (this.glassShown().bg !== "bloom") { this.bloomPending = false; return; }
       cx.spawn(async (cx) => {
         const rel = await this.renderBloom(this.glassShown()).catch((e) => { this.say(String(e.message || e), "error", cx); return null; });
-        if (rel && gen === this.bloomGen) { this.glassDraft.bloom = rel; cx.notify(); }
+        if (gen === this.bloomGen) { this.bloomPending = false; if (rel) this.glassDraft.bloom = rel; cx.notify(); }
       });
     });
   }
@@ -709,6 +740,67 @@ export default class ThemeStudio extends View {
       this.stageGlass({ bg: "image", image: rel }, cx);
       this.say(`Picture ready: ${rel}. Save to keep it.`, "success", cx);
     }));
+  }
+
+  // The auto-hide sidebar's watcher, in an empty floating block: a block only hears the pointer over
+  // itself, so it reads the window's. Resting on the rail unfolds the sidebar; once the pointer has
+  // been well past it for a moment, it folds back. It folds the way Herdr's own toggle does (same
+  // rail width, same saved width), and a sidebar unfolded with that toggle is left alone.
+  // ponytail: polls every 100 ms; a window-wide pointer event would replace it if Herdr adds one.
+  watchEdge(cx) {
+    // A mod can't see a held mouse button, so a width it didn't set means someone is dragging the
+    // sidebar's edge: it waits until the width has been still for a second (else it fights the drag).
+    let mine = false, since = 0, lastW = null, setW = null, stillAt = 0;
+    const fold = (px, folded) => { setW = px; setShared("sidebar.collapsed", folded); run("layout.resize", { id: "sidebar", px }); };
+    cx.timer.every(100, () => {
+      const tree = layout() || {}, sb = findNode(tree, "sidebar"), p = window.mouse_position(), now = Date.now();
+      if (!sb) return;
+      if (autoHideMode(tree) === "hidden") { // gone entirely: the window's left edge shows it
+        const want = sb.hidden ? p.x >= 0 && p.x <= 4 : mine && p.x > ((sb.size && sb.size.px) || 268) + 32;
+        if (!want) { since = 0; return; }
+        if (!since) { since = now; return; }
+        if (sb.hidden) { run("layout.show", { id: "sidebar" }); mine = true; since = 0; }
+        else if (now - since > 600) { run("layout.hide", { id: "sidebar" }); mine = false; since = 0; }
+        return;
+      }
+      if (sb.hidden) return;
+      const w = (sb.size && sb.size.px) || 268;
+      if (w !== lastW) {
+        if (w !== setW) { stillAt = now + 1000; since = 0; if (w >= 160) setShared("sidebar.width", w); }
+        lastW = w; setW = null;
+      }
+      if (now < stillAt) return;
+      // Over the rail, below its top row (the window buttons and the brand live there).
+      const want = w < 160 ? p.x >= 0 && p.x <= w && p.y > 46 : mine && p.x > w + 32;
+      if (!want) { since = 0; return; }
+      if (!since) { since = now; return; }
+      if (w < 160 && now - since > 200) { fold(shared("sidebar.width") || 268, false); mine = true; since = 0; }
+      else if (w >= 160 && now - since > 600) { setShared("sidebar.width", w); fold(this.railPx(), true); mine = false; since = 0; }
+    });
+  }
+
+  // Room for a three-digit number and its status dot; the tabs make room for the macOS window buttons.
+  railPx() { return 52; }
+
+  setAutoHide(on, cx, mode = autoHideMode(layout()) || "rail") {
+    if (!this.personal()) return this.say("Auto-hide needs your own copy of this layout", "error", cx);
+    const sb = findNode(layout() || {}, "sidebar"), w = sb && sb.size && sb.size.px;
+    if (on && w >= 160) setShared("sidebar.width", w);
+    const tree = withAutoHide(layout(), on, this.railPx(), shared("sidebar.width") || 268, mode);
+    if (!tree) return this.say("This layout has no sidebar to hide", "error", cx);
+    cx.spawn((cx) => this.guard(cx, on ? "Hiding the sidebar" : "Bringing the sidebar back", async () => {
+      await this.ensureBackup();
+      setShared("sidebar.collapsed", on && mode === "rail");
+      run("layout.set", { layout: tree });
+      this.say(!on ? "The sidebar stays open again" : mode === "rail" ? "The sidebar folds to its rail: rest the pointer on the rail to open it"
+        : "The sidebar hides: move the pointer to the window's left edge to bring it back", "success", cx);
+    }));
+  }
+
+  // A layout switch closes the Studio, so anything else (theme picks) is sent first, then the switch.
+  afterSwitch([verb, args], picks = []) {
+    for (const [c, a] of picks) run(c, a);
+    run(verb, args);
   }
 
   makeCopy(cx, tab = "glass") {
@@ -830,17 +922,19 @@ export default class ThemeStudio extends View {
   // Yours to edit or delete: a theme file the Studio wrote or imported. Herdr's and presets copy first.
   isOwn(name) { return ownedThemes().includes(name) && themes().some((t) => t.name === name) && name !== shared("layout"); }
 
+  // "import" is the library with its import panel open.
   goTo(view, cx) {
+    if (view === "import") { this.importing = true; view = "themes"; }
     this.view = view; this.ask = null; this.leaving = false;
     if (view !== "edit") { this.editing = null; setShared(K.editing, null); }
-    if (view === "import") cx.spawn((cx) => this.scanThemeFiles(cx));
+    if (this.importing) cx.spawn((cx) => this.scanThemeFiles(cx));
     cx.notify();
   }
 
   // Opens a theme in the editor. It becomes the theme in use first, so the window shows every edit.
+  // One of Herdr's themes opens as it is; the first Save writes the person's copy (forkName).
   editTheme(name, cx) {
-    if (!this.isOwn(name)) return this.say(`${name} isn't yours to change: copy it first`, "error", cx);
-    const open = async () => {
+    const open = async (cx) => {
       this.editing = name; setShared(K.editing, name);
       this.view = "edit"; this.ask = null; this.leaving = false; this.msg = null;
       cx.spawn((cx) => this.checkCursorHook(cx));
@@ -900,10 +994,9 @@ export default class ThemeStudio extends View {
 
   // The editor's Save: write what's staged, then keep type, glass and cursor with the theme.
   saveEdit(cx, then) {
-    const name = this.editing;
-    if (!name) return;
-    this.applyAll(cx, async () => {
-      const s = this.shown();
+    if (!this.editing) return;
+    this.applyAll(cx, async (cx) => {
+      const name = await this.ownEditing(cx), s = this.shown();
       setExtras(name, {
         type: { font: s.font_family, font_size: s.font_size, ui_font: s.ui_font_family, font_ligatures: s.font_ligatures, minimum_contrast: s.minimum_contrast },
         // Rendered pictures are dropped as newer ones replace them, so the theme keeps the recipe and re-renders.
@@ -913,7 +1006,7 @@ export default class ThemeStudio extends View {
       });
       this.leaving = false;
       this.say(`Saved ${name}`, "success", cx);
-      if (then) then();
+      if (then) then(cx);
     });
   }
 
@@ -934,42 +1027,31 @@ export default class ThemeStudio extends View {
   }
 
   // --- view ------------------------------------------------------------------
-  // Two levels: the theme manager (and its import view), and the editor for one theme with its tabs.
+  // Two levels: the theme library, and the editor for one theme with its Colors, Type, Glass and
+  // Agents tabs. Both are a header, a big preview on the left, controls on the right and one bar below.
   render(cx) {
-    if (this.part === "button") return div();
+    if (this.part === "button" || this.part === "edge") return div();
     const t = theme();
     const s = this.shown();
     const overlay = props() && props().overlay;
-    const view = this.view === "edit"
-      ? { themes: null, colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx) }[this.tab]()
-      : this.view === "import" ? this.importView(t, s, cx) : this.managerView(t, s, cx);
-    // A view may pin a head (preview and its bar) above the part that scrolls.
-    const head = view.head, body = view.head ? view.body : view;
-    const m = this.msg;
-    const msgColor = !m ? t.dim : m.level === "error" ? t.blocked : m.level === "success" ? t.done : t.muted;
-    const title = this.view === "edit" ? `Editing ${this.editing}` : this.view === "import" ? "Import a theme" : "Theme Studio";
-    const sub = this.view === "edit"
-      ? `Changes show in the window; Save keeps them in ${this.editing}.`
-      : `In use: dark ${s.theme_dark} · light ${s.theme_light} · ${s.dark ? "dark" : "light"} mode now`;
+    const edit = this.view === "edit";
     const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
+    const panel = edit
+      ? { colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx) }[this.tab]()
+      : this.view === "settings" ? this.settingsView(t) : this.libraryView(t, s, cx);
+    const pinned = edit ? this.pinnedEditor(t) : null;
     return v_flex().id("root").size_full().bg(t.popover).text_color(t.foreground).text_size(13)
-      .child(stop(h_flex().px(14).pt(12).pb(8).gap(8).items_center())
-        .when(this.view !== "themes", (el) => el.child(this.button("back", "← Themes", t, (_e, cx) => this.back(cx))))
-        .child(v_flex().flex_1().min_w(0).child(div().text_size(14).font_semibold().truncate().child(title))
-          .child(div().text_size(11.5).text_color(t.muted).truncate().child(sub)))
-        .when(this.view === "themes", (el) => el.child(this.button("import-view", "Import", t, (_e, cx) => this.goTo("import", cx))))
-        .when(!!overlay, (el) => el.child(this.button("close", "Close", t, () => closeOverlay(overlay)))))
-      .when(this.view === "edit", (el) => el.child(stop(h_flex().px(10).pb(8).gap(2))
-        .children(TABS.map(([id, label]) => this.pill(`tab-${id}`, label, this.tab === id, t, (_e, cx) => { this.tab = id; setShared(K.tab, id); if (id === "colors") cx.spawn((cx) => this.checkCursorHook(cx)); cx.notify(); })))))
-      .child(div().border_b_1().border_color(t.border))
-      .when(!!head, (el) => el.child(stop(v_flex().px(14).pt(12).pb(10).border_b_1().border_color(t.border)).child(head)))
-      .child(stop(v_flex().id("body").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(16)).child(body))
-      .child(stop(h_flex().px(14).py(8).gap(10).items_center().justify_between().border_t_1().border_color(t.border))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(msgColor).child(m ? m.text : this.view === "edit" ? "Changes wait for Save." : "Pick a theme to preview it."))
-        .when(!!shared(K.backup), (el) => el.child(this.button("revert", "Revert", t, (_e, cx) => this.revert(cx)))));
+      .child(stop(this.header(t, s, overlay)))
+      .child(h_flex().flex_1().min_h(0).border_t_1().border_color(t.border)
+        .child(this.canvas(t, s))
+        .child(stop(v_flex().w(400).flex_none().h_full().min_h(0)
+          .when(edit, (el) => el.child(this.tabBar(t)))
+          .when(!!pinned, (el) => el.child(pinned))
+          .child(v_flex().id("body").flex_1().min_h(0).overflow_y_scrollbar().px(14).pt(14).pb(20).gap(22).child(panel)))))
+      .child(stop(this.footer(t, cx)));
   }
 
-  // Back from the editor asks first when there's something unsaved.
+  // Back from the editor asks first (in the bottom bar) when there's something unsaved.
   back(cx) {
     if (this.view === "edit" && this.changeCount() > 0) { this.leaving = true; return cx.notify(); }
     this.cancelAll(cx);
@@ -978,156 +1060,409 @@ export default class ThemeStudio extends View {
 
   changeCount() { const c = this.changes(); return c.type + c.colors + c.glass + c.agents; }
 
-  // --- the theme manager -------------------------------------------------------
-  managerView(t, s, cx) {
+  // The name Save gives a copy of one of Herdr's themes: <name>-custom, numbered when that's taken.
+  forkName(name) {
+    let fork = `${slug(name)}-custom`;
+    for (let i = 2; themes().some((th) => th.name === fork); i++) fork = `${slug(name)}-custom-${i}`;
+    return fork;
+  }
+
+  // --- header, tabs, preview and bottom bar ----------------------------------------
+  header(t, s, overlay) {
+    const edit = this.view === "edit", own = edit && ownedThemes().includes(this.editing);
+    const left = this.view === "settings"
+      ? h_flex().gap(4).items_center().min_w(0)
+        .child(this.iconButton("back", "back", "Back to the themes", t, (_e, cx) => this.goTo("themes", cx)))
+        .child(v_flex().min_w(0)
+          .child(div().id("crumb").text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.goTo("themes", cx)).child("Theme Studio ›"))
+          .child(div().text_size(13.5).font_semibold().child("Settings")))
+      : edit
+      ? h_flex().gap(4).items_center().min_w(0)
+        .child(this.iconButton("back", "back", "Back to the themes", t, (_e, cx) => this.back(cx)))
+        .child(v_flex().min_w(0)
+          .child(div().id("crumb").text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.back(cx)).child("Themes ›"))
+          .child(h_flex().gap(6).items_center().min_w(0)
+            .child(div().text_size(13.5).font_semibold().truncate().child(this.editing))
+            .when(!own, (el) => el.child(div().flex_none().px(5).rounded(5).border_1().border_color(t.border).text_size(10.5).text_color(t.dim).child("Herdr's")))))
+      : h_flex().gap(10).items_center().min_w(0)
+        .child(div().size(28).flex_none().rounded(8).bg(t.accent).flex().items_center().justify_center().child(svg(`${MOD_REL}/palette.svg`).size(15).text_color(t.accent_foreground)))
+        .child(v_flex().min_w(0)
+          .child(div().text_size(13.5).font_semibold().child("Theme Studio"))
+          .child(div().text_size(11.5).text_color(t.dim).truncate().child(`In use: ${s.theme_dark} (dark) · ${s.theme_light} (light)`)));
+    return h_flex().h(52).flex_none().pl(12).pr(10).gap(4).items_center()
+      .child(div().flex_1().min_w(0).child(left))
+      .when(this.view === "themes", (el) => el.child(this.iconButton("settings", "settings", "Settings: the sidebar and the palette icon", t, (_e, cx) => this.goTo("settings", cx))))
+      .child(this.moreMenu(t))
+      .when(!!overlay, (el) => el.child(this.iconButton("close", "close", "Close", t, () => closeOverlay(overlay))));
+  }
+
+  // The ⋯ menu: tools you need now and then, out of the everyday flow.
+  moreMenu(t) {
+    const open = this.menuOpen;
+    const item = (id, icon, label, onClick, danger = false) => h_flex().id(`mi-${id}`).px(9).py(7).gap(9).rounded(7).items_center().cursor_pointer()
+      .hover((st) => st.bg(t.hover))
+      .on_click((e, cx) => { this.menuOpen = false; onClick(e, cx); cx.notify(); })
+      .child(svg(icon.includes("/") ? icon : `${ICONS}/${icon}.svg`).size(14).flex_none().text_color(danger ? t.blocked : t.muted))
+      .child(div().flex_1().min_w(0).text_size(12.5).text_color(danger ? t.blocked : t.foreground).child(label));
+    const sep = () => div().h(1).mx(3).my(4).bg(t.border);
+    const trigger = this.iconButton("more", "more", "More", t, (_e, cx) => { this.menuOpen = !open && Date.now() - (this.menuClosedAt || 0) > 300; cx.notify(); }, open);
+    return Popup.new("more-popup", trigger).anchor("top_right")
+      .when(open, (el) => el.content(v_flex().id("more-menu").w(290).p(5).rounded(11).border_1().border_color(t.input).bg(t.raised).shadow_lg()
+        .on_mouse_down_out((_e, cx) => { this.menuOpen = false; this.menuClosedAt = Date.now(); cx.notify(); })
+        .child(item("import", "import", "Import a theme…", (_e, cx) => { this.importing = true; if (this.view === "edit") this.back(cx); else this.goTo("import", cx); }))
+        .child(item("folder", "folder", "Show the themes folder", (_e, cx) => cx.spawn(async () => { await exec("open", [`${HOME}/themes`]); })))
+        .when(!!shared(K.backup), (el) => el.child(sep())
+          .child(item("revert", "undo", "Undo all Theme Studio changes…", () => { this.ask = { kind: "revert" }; }, true)))));
+  }
+
+  tabBar(t) {
+    const c = this.changes();
+    return h_flex().px(8).gap(2).flex_none().border_b_1().border_color(t.border)
+      .children(TABS.map(([id, label]) => {
+        const on = this.tab === id;
+        return h_flex().id(`tab-${id}`).px(10).pt(10).pb(8).gap(6).items_center().cursor_pointer()
+          .border_b_2().border_color(on ? t.accent : "#00000000")
+          .text_size(12.5).font_medium().text_color(on ? t.foreground : t.muted).hover((st) => st.text_color(t.foreground))
+          .on_click((_e, cx) => { this.tab = id; setShared(K.tab, id); if (id === "colors") cx.spawn((cx) => this.checkCursorHook(cx)); cx.notify(); })
+          .child(label)
+          .when(c[id] > 0, (el) => el.child(div().size(6).rounded(3).bg(t.working)));
+      }));
+  }
+
+  // The left of the window: the big preview, from what's staged. Type adds its text sample.
+  canvas(t, s) {
+    const edit = this.view === "edit";
+    const note = edit ? "Preview: what you've changed, before you Save" : this.view === "settings" ? `${settings().theme}, in use` : this.themeDraft ? `Previewing ${this.themeDraft.name}` : `${settings().theme}, in use`;
+    return v_flex().flex_1().min_w(0).h_full().p(18).gap(10).bg(t.canvas).border_r_1().border_color(t.border)
+      .child(div().text_size(11.5).text_color(t.dim).child(note))
+      .child(div().flex_1().min_h(0).child(this.windowPreview(t)))
+      .when(edit && this.tab === "type", (el) => el.child(this.typeSample({ ...t, ...this.themeColors() }, this.typeValues(s).v)));
+  }
+
+  // One bar for everything about saving, and the questions that need an answer before going on.
+  footer(t, cx) {
+    const m = this.msg, edit = this.view === "edit";
+    const note = (text, dot, color) => h_flex().flex_1().min_w(0).gap(8).items_center()
+      .when(!!dot, (el) => el.child(div().size(7).flex_none().rounded(4).bg(dot)))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(color || t.muted).child(text));
+    const said = m && { text: m.text, color: m.level === "error" ? t.blocked : m.level === "success" ? t.done : t.muted };
+    const bar = (left, ...buttons) => h_flex().h(52).flex_none().pl(14).pr(12).gap(8).items_center().border_t_1().border_color(t.border).bg(t.chrome)
+      .child(left).children(buttons.filter(Boolean));
+    const ask = this.ask;
+    if (ask && ask.kind === "revert") return bar(note("Undo all Theme Studio changes? Your theme files stay.", t.blocked, t.foreground),
+      this.button("ask-cancel", "Keep it", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
+      this.button("revert", "Undo all", t, (_e, cx) => { this.ask = null; this.revert(cx); }, true));
+    if (edit) {
+      const n = this.changeCount(), own = ownedThemes().includes(this.editing), as = own ? this.editing : this.forkName(this.editing);
+      if (this.leaving && n) return bar(note(`Save your changes to ${as}?`, t.working, t.foreground),
+        this.button("stay", "Keep editing", t, (_e, cx) => { this.leaving = false; cx.notify(); }, "ghost"),
+        this.button("discard", "Discard", t, (_e, cx) => { this.cancelAll(cx); this.goTo("themes", cx); }),
+        this.button("save-leave", "Save", t, (_e, cx) => this.saveEdit(cx, (cx) => this.goTo("themes", cx)), true));
+      if (n) {
+        const c = this.changes(), where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass], ["Agents", c.agents]].filter(([, k]) => k).map(([w]) => w).join(", ");
+        return bar(said && m.level === "error" ? note(said.text, t.blocked, said.color) : note(`${n} unsaved · ${where}${own ? "" : ` · saves as ${as}`}`, t.working, t.foreground),
+          this.button("cancel-all", "Discard", t, (_e, cx) => this.cancelAll(cx), "ghost"),
+          this.button("apply-all", own ? "Save" : "Save copy", t, (_e, cx) => this.saveEdit(cx), true));
+      }
+      return bar(said ? note(said.text, null, said.color) : note(own ? `Everything's saved to ${this.editing}` : `Herdr's theme: change anything, and Save makes ${as}`, own ? t.done : null));
+    }
+    if (this.view === "settings") return bar(said ? note(said.text, null, said.color) : note("Settings apply right away. They're yours, not a theme's: changing themes keeps them."));
+    const name = this.selected(), mine = this.isOwn(name), staged = !!this.themeDraft;
+    if (ask && ask.kind === "copy") return bar(h_flex().flex_1().min_w(0).gap(8).items_center()
+        .child(div().flex_none().text_size(12).text_color(t.muted).child(`Copy ${ask.from} as`))
+        .child(Input.new(this.copyName).flex_1().h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground)),
+      this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
+      this.button("copy-go", "Copy", t, (_e, cx) => this.copyTheme(ask.from, this.copyName.value(), cx), true));
+    if (ask && ask.kind === "delete") return bar(note(`Delete ${name}? Its file in themes/ goes too.`, t.blocked, t.foreground),
+      this.button("ask-cancel", "Keep it", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
+      this.button("delete-go", "Delete", t, (_e, cx) => this.deleteTheme(name, cx), true));
+    return bar(said ? note(said.text, null, said.color) : staged ? note(`Previewing ${name}. Nothing's changed yet.`, t.accent, t.foreground) : note(`${name} is in use`, t.done),
+      staged && this.button("unstage", "Cancel", t, (_e, cx) => { this.themeDraft = null; this.syncControls(); cx.notify(); }, "ghost"),
+      this.themeMenu(t, name, mine),
+      this.button("edit", mine ? "Edit" : "Edit a copy", t, (_e, cx) => this.editTheme(name, cx), !staged),
+      staged && this.button("apply-theme", "Use it", t, (_e, cx) => this.applyAll(cx), true));
+  }
+
+  // The selected theme's other actions, in a menu that opens up from the bottom bar.
+  themeMenu(t, name, mine) {
+    const open = this.themeMenuOpen;
+    const item = (id, icon, label, onClick, danger = false) => h_flex().id(`tm-${id}`).px(9).py(7).gap(9).rounded(7).items_center().cursor_pointer()
+      .hover((st) => st.bg(t.hover))
+      .on_click((e, cx) => { this.themeMenuOpen = false; onClick(e, cx); cx.notify(); })
+      .child(svg(`${ICONS}/${icon}.svg`).size(14).flex_none().text_color(danger ? t.blocked : t.muted))
+      .child(div().text_size(12.5).text_color(danger ? t.blocked : t.foreground).child(label));
+    const trigger = this.iconButton("theme-more", "more", `More for ${name}`, t, (_e, cx) => { this.themeMenuOpen = !open && Date.now() - (this.themeMenuClosedAt || 0) > 300; cx.notify(); }, open);
+    return Popup.new("theme-popup", trigger).anchor("bottom_right")
+      .when(open, (el) => el.content(v_flex().id("theme-menu").w(200).p(5).rounded(11).border_1().border_color(t.input).bg(t.raised).shadow_lg()
+        .on_mouse_down_out((_e, cx) => { this.themeMenuOpen = false; this.themeMenuClosedAt = Date.now(); cx.notify(); })
+        .child(item("copy", "copy", "Duplicate…", () => { this.ask = { kind: "copy", from: name }; this.copyName.set_value(`${slug(name)}-copy`); }))
+        .child(item("export", "code", "Copy JSON", (_e, cx) => this.exportTheme(name, cx)))
+        .when(mine && !this.inUse(name), (el) => el.child(item("delete", "trash", "Delete…", () => { this.ask = { kind: "delete", name }; }, true)))));
+  }
+
+  // --- the theme library ---------------------------------------------------------------
+  libraryView(t, s, cx) {
     // A theme named like a layout belongs to that layout (Herdr offers it only there).
     const all = themes().filter((th) => th.name === shared("layout") || !layouts().includes(th.name));
-    const sel = this.selected();
-    const card = (id, name, c, onClick) => {
-      const on = sel === name, used = this.inUse(name);
-      return v_flex().id(id).w(132).rounded(8).overflow_hidden().cursor_pointer()
-        .border_1().border_color(on ? t.accent : t.border).when(on, (el) => el.shadow_sm())
-        .hover((st) => st.border_color(on ? t.accent : t.input))
-        .on_click(onClick)
-        .child(h_flex().h(40).p(6).gap(2).items_end().bg(c.background)
-          .children([1, 2, 3, 4, 5, 6].map((i) => div().flex_1().h(8 + ((i * 7) % 20)).rounded(2).bg(c.ansi[i]))))
-        .child(h_flex().px(8).py(5).gap(4).justify_between().bg(t.raised)
-          .child(div().text_size(11.5).truncate().child(name))
-          .child(div().flex_none().text_size(10.5).text_color(used ? t.done : t.dim).child(used ? "● in use" : c.light ? "light" : "dark")));
-    };
-    const asCard = (th) => ({ background: th.colors.background, ansi: Array.from({ length: 16 }, (_, i) => th.colors["ansi" + i]), light: th.light });
+    const q = this.themeQuery.trim().toLowerCase(), f = this.themeFilter;
+    const shows = (x) => (!q || x.name.toLowerCase().includes(q)) && (f === "all" || (f === "light") === !!x.light);
     const pick = (name) => (_e, cx) => { this.ask = null; this.stageTheme(name, cx); };
-    const mine = all.filter((th) => this.isOwn(th.name)), others = all.filter((th) => !this.isOwn(th.name));
-    const presets = this.presets.filter((p) => !all.some((th) => th.name === p.name)).map((p) => {
-      const light = contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background);
-      return card(`pre-${p.name}`, p.name, { background: p.file.background, ansi: p.file.ansi, light }, pick(p.name));
-    });
-    const grid = (cards) => h_flex().flex_wrap().gap(8).children(cards);
-    const body = v_flex().gap(16)
-      .child(this.section("Your themes", t, mine.length ? grid(mine.map((th) => card(`th-${th.name}`, th.name, asCard(th), pick(th.name))))
-        : div().text_color(t.dim).child("None yet. Copy one below to make it yours."),
-        "Yours to edit and delete. A theme holds its colors and, once saved in the editor, its type, glass and cursor too."))
-      .child(this.section("Herdr's and others", t, grid(others.map((th) => card(`th-${th.name}`, th.name, asCard(th), pick(th.name)))),
-        "Copy one to change it, so the original stays as it was."))
-      .when(presets.length > 0, (el) => el.child(this.section("Presets", t, grid(presets),
-        "Bundled with the Studio. Applying one adds it to themes/, so Herdr's Settings lists it too.")))
-      .child(this.section("Palette icon beside Settings", t, this.personal()
-        ? h_flex().child(this.button("sidebar-btn", hasFooterIcon(layout()) ? "Remove the icon" : "Add the icon", t, (_e, cx) => this.setButton(!hasFooterIcon(layout()), cx), !hasFooterIcon(layout())))
-        : h_flex().child(this.button("sidebar-copy", `Make my copy of ${shared("layout")} and add it`, t, (_e, cx) => this.makeCopy(cx, "colors"), true)),
-        this.personal()
-          ? "Herdr's Settings screen can't take extra sections, so the icon sits in the Settings row of the sidebar, or under Settings on the narrow rail."
-          : "Herdr's own layouts can't change, so the icon needs your own copy of this one. Herdr keeps updating everything else."))
-      .child(h_flex().child(this.button("reveal", "Show themes folder", t, (_e, cx) => cx.spawn(async () => { await exec("open", [`${HOME}/themes`]); }))));
-    return { head: v_flex().gap(8).child(this.windowPreview(t)).child(this.managerBar(t, s)), body };
+    const item = (th) => ({ name: th.name, colors: th.colors, light: th.light });
+    const presets = this.presets.filter((p) => !all.some((th) => th.name === p.name))
+      .map((p) => ({ name: p.name, colors: presetColors(p.file), light: contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background) }));
+    const grid = (list, empty) => {
+      const l = list.filter(shows);
+      return l.length ? h_flex().flex_wrap().gap(10).children(l.map((x) => this.themeCard(t, x, pick(x.name)))) : div().text_size(12).text_color(t.dim).child(q || f !== "all" ? "No matches." : empty);
+    };
+    return v_flex().gap(22)
+      .child(h_flex().gap(8).items_center()
+        .child(h_flex().flex_1().min_w(0).h(30).px(9).gap(7).items_center().rounded(8).border_1().border_color(t.input).bg(t.background)
+          .child(svg(`${ICONS}/search.svg`).size(14).flex_none().text_color(t.dim))
+          .child(Input.new(this.themeSearch).flex_1().min_w(0).h(28).text_color(t.foreground)))
+        .child(this.seg("thf", [["all", "All"], ["dark", "Dark"], ["light", "Light"]], f, t, (v, cx) => { this.themeFilter = v; cx.notify(); }))
+        .child(this.button("import-open", this.importing ? "Close" : "Import", t, (_e, cx) => { if (this.importing) { this.importing = false; cx.notify(); } else this.goTo("import", cx); })))
+      .when(this.importing, (el) => el.child(this.importPanel(t)))
+      .child(this.section("Your themes", t, grid(all.filter((th) => this.isOwn(th.name)).map(item), "None yet. Edit one of Herdr's below: Save makes it yours."),
+        "Yours to edit and delete. A theme holds its colors and, once saved in the editor, its type, glass, cursor and agents list too."))
+      .child(this.section("Herdr's and others", t, grid(all.filter((th) => !this.isOwn(th.name)).map(item), "None."),
+        "These don't change. Edit one and Save makes your copy, so the original stays as it was."))
+      .when(presets.length > 0, (el) => el.child(this.section("Bundled presets", t, grid(presets, ""),
+        "Bundled with the Studio. Using one adds it to themes/, so Herdr's Settings lists it too.")));
   }
 
-  // The selected theme's actions under the preview, or the copy or delete step in their place.
-  managerBar(t, s) {
-    const name = this.selected(), own = this.isOwn(name), staged = !!this.themeDraft;
-    const field = (state) => Input.new(state).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground);
-    if (this.ask && this.ask.kind === "copy") return h_flex().gap(6).items_center()
-      .child(div().flex_none().text_size(12).text_color(t.muted).child(`Copy ${this.ask.from} as`))
-      .child(field(this.copyName))
-      .child(this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }))
-      .child(this.button("copy-go", this.ask.edit ? "Copy and edit" : "Copy", t, (_e, cx) => this.copyTheme(this.ask.from, this.copyName.value(), cx, this.ask.edit), true));
-    if (this.ask && this.ask.kind === "delete") return h_flex().gap(6).items_center()
-      .child(div().flex_1().min_w(0).text_size(12).child(`Delete ${name}? Its file in themes/ goes too.`))
-      .child(this.button("ask-cancel", "Keep it", t, (_e, cx) => { this.ask = null; cx.notify(); }))
-      .child(this.button("delete-go", "Delete", t, (_e, cx) => this.deleteTheme(name, cx), true));
-    const copy = (edit) => (_e, cx) => { this.ask = { kind: "copy", from: name, edit }; this.copyName.set_value(`${slug(name)}-copy`); cx.notify(); };
-    return h_flex().gap(6).items_center()
-      .child(v_flex().flex_1().min_w(0)
-        .child(div().text_size(12.5).font_medium().truncate().child(name))
-        .child(div().text_size(11).text_color(t.dim).truncate().child(staged ? "Previewing: Apply to use it" : this.inUse(name) ? "In use" : own ? "Yours" : "Herdr's: copy to edit")))
-      .child(own ? this.button("edit", "Edit", t, (_e, cx) => this.editTheme(name, cx)) : this.button("copy-edit", "Copy to edit", t, copy(true)))
-      .child(this.button("copy", "Copy", t, copy(false)))
-      .child(this.button("export", "Copy JSON", t, (_e, cx) => this.exportTheme(name, cx)))
-      .when(own && !this.inUse(name), (el) => el.child(this.button("delete", "Delete", t, (_e, cx) => { this.ask = { kind: "delete", name }; cx.notify(); })))
-      .when(staged, (el) => el.child(this.button("apply-theme", "Apply", t, (_e, cx) => this.applyAll(cx), true)));
+  // A theme as a little Herdr window in its own colors: sidebar, a pane, its terminal colors.
+  themeCard(t, x, onClick) {
+    const c = x.colors, on = this.selected() === x.name, used = this.inUse(x.name);
+    const bg = c.background, fg = c.foreground, chrome = c.chrome || bg, dim = c.dim || c.ansi8 || fg, line = c.border || c.ansi8 || dim;
+    const bar = (w, col) => div().w(w).h(3).rounded(2).bg(col);
+    return v_flex().id(`card-${x.name}`).w(176).rounded(10).overflow_hidden().cursor_pointer()
+      .border_1().border_color(on ? t.accent : t.border).when(on, (el) => el.shadow_sm())
+      .hover((st) => st.border_color(on ? t.accent : t.input))
+      .on_click(onClick)
+      .child(h_flex().h(76).p(5).gap(4).bg(c.canvas || bg)
+        .child(v_flex().w(38).h_full().rounded(4).bg(chrome).p(5).gap(4).child(bar(26, dim)).child(bar(18, dim)).child(bar(23, c.accent || c.ansi4)))
+        .child(v_flex().relative().flex_1().h_full().rounded(4).bg(bg).p(7).gap(4)
+          .child(bar(56, c.ansi4)).child(bar(80, withAlpha(fg, 0.5))).child(bar(40, c.ansi2))
+          .child(h_flex().absolute().left(7).right(7).bottom(6).gap(3).children([1, 2, 3, 4, 5, 6].map((i) => div().flex_1().h(7).rounded(2).bg(c[`ansi${i}`]))))))
+      .child(h_flex().px(9).py(7).gap(6).items_center().bg(chrome).border_t_1().border_color(line)
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(fg).child(x.name))
+        .child(h_flex().flex_none().gap(4).items_center().text_size(11).text_color(dim)
+          .when(used, (el) => el.child(div().size(6).rounded(3).bg(t.done)))
+          .child(used ? "In use" : x.light ? "Light" : "Dark")));
   }
 
-  // --- import ---------------------------------------------------------------------
-  importView(t, s, cx) {
-    return v_flex().gap(16)
-      .when(this.found.length > 0, (el) => el.child(this.section("Theme files on this Mac", t,
-        h_flex().flex_wrap().gap(6).children(this.found.map((f) => this.pill(`found-${f.name}`, f.name, false, t, (_e, cx) => this.importFile(f.path, cx)))),
-        "iTerm2 themes in Downloads and on the Desktop. Click one to import it. The first time, macOS asks whether Herdr may read those folders.")))
-      .child(this.section("Paste or drop", t, v_flex().gap(6)
-        .child(div().id("import-drop").on_drop((e, cx) => this.importFile(e.paths && e.paths[0], cx))
-          .child(Textarea.new(this.importText).h(130).p(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12)))
-        .child(h_flex().gap(6)
-          .child(Input.new(this.importName).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-          .child(this.button("import-clip", "From clipboard", t, (_e, cx) => this.importTheme(cx, cx.read_from_clipboard() || "")))
-          .child(this.button("import", "Import", t, (_e, cx) => this.importTheme(cx), true))),
-        "iTerm2 (.itermcolors), Ghostty, kitty, Alacritty TOML, or Herdr JSON. A dropped file is named after itself. The theme joins Your themes; nothing changes until you apply it."));
+  importPanel(t) {
+    return v_flex().gap(10).p(12).rounded(11).border_1().border_color(t.border).bg(t.raised)
+      .child(div().id("import-drop").on_drop((e, cx) => this.importFile(e.paths && e.paths[0], cx))
+        .child(Textarea.new(this.importText).h(110).p(8).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12)))
+      .child(h_flex().gap(6)
+        .child(Input.new(this.importName).flex_1().min_w(0).h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+        .child(this.button("import-clip", "From clipboard", t, (_e, cx) => this.importTheme(cx, cx.read_from_clipboard() || "")))
+        .child(this.button("import", "Import", t, (_e, cx) => this.importTheme(cx), true)))
+      .when(this.found.length > 0, (el) => el.child(h_flex().flex_wrap().gap(6).items_center()
+        .child(div().text_size(11.5).text_color(t.dim).child("On this Mac:"))
+        .children(this.found.map((f) => this.chip(t, `found-${f.name}`, f.name, null, false, (_e, cx) => this.importFile(f.path, cx))))))
+      .child(div().text_size(11.5).text_color(t.dim).line_height("16px").child("iTerm2 (.itermcolors), Ghostty, kitty, Alacritty TOML or Herdr JSON: paste it, drop a file here, or pick one found in Downloads or on the Desktop. Nothing changes until you use it."));
+  }
+
+  // --- the editor's tabs ------------------------------------------------------------------
+  // The color picker sits above the tab's controls while a color on that tab is picked.
+  pinnedEditor(t) {
+    const id = this.pickTarget;
+    if (!id) return null;
+    const [kind, key] = id.split(":");
+    const here = { colors: kind === "tok" || id === "glass:behind", glass: kind === "glass" && key !== "behind", agents: kind === "agent" }[this.tab];
+    if (!here) return null;
+    const c = this.themeColors();
+    let label, reset = null, badge = null;
+    if (kind === "tok") {
+      label = TOKEN_LABELS[key] || key.replace(/^ansi(\d+)$/, "Terminal color $1");
+      // Every color gets the same Reset. It undoes an unsaved change first; with none, a color Herdr
+      // works out goes back to that. A terminal color has nothing to go back to past its saved value.
+      const staged = key in this.colorDraft, derived = !TERMINAL_TOKENS.includes(key) && !key.startsWith("ansi");
+      reset = { can: staged || derived, tip: staged ? "Undo this change" : derived ? "Back to the color Herdr works out from the terminal colors" : "Nothing to undo: terminal colors keep their saved value",
+        run: (cx) => { if (staged) { delete this.colorDraft[key]; this.pickFor = null; this.syncControls(); cx.notify(); } else this.stageColor(key, null, cx); } };
+      badge = this.contrastBadge(t, c, key);
+    } else {
+      label = kind === "agent" ? `${(AGENT_COLORS.find(([k]) => k === key) || [])[1] || key} (agents list)` : GLASS_LABELS[key] || key;
+      reset = { can: true, tip: "Back to the theme's own color", run: (cx) => this.stageTarget("", cx) };
+    }
+    return v_flex().flex_none().px(14).py(12).border_b_1().border_color(t.border).child(this.colorEditor(t, label, key, reset, badge));
+  }
+
+  contrastBadge(t, c, token) {
+    const p = PAIRS[token];
+    if (!p || !c[token] || !c[p[0]]) return null;
+    const r = contrast(c[token], c[p[0]]), ok = r >= p[1];
+    return div().flex_none().px(5).rounded(5).text_size(10).bg(withAlpha(ok ? t.done : t.working, 0.15)).text_color(ok ? t.done : t.working).child(`${r.toFixed(1)}:1`);
   }
 
   colorsTab(t, s, cx) {
     const c = this.themeColors(), sel = this.pickTarget, g = this.glassShown();
-    const editing = this.editing || (ownedThemes().includes(s.theme) ? s.theme : `${slug(s.theme)}-custom`);
-    const swatch = (hex, size = 16) => div().size(size).rounded(4).bg(hex).border_1().border_color(t.input);
-    const badge = (token) => {
-      const p = PAIRS[token];
-      if (!p || !c[token] || !c[p[0]]) return null;
-      const r = contrast(c[token], c[p[0]]);
-      const ok = r >= p[1];
-      return div().px(6).rounded(9).text_size(10.5).bg(ok ? t.hover : t.selected).text_color(ok ? t.done : t.working).child(`${r.toFixed(1)}:1`);
-    };
-    const row = (token) => {
-      const on = sel === `tok:${token}`, staged = token in this.colorDraft;
-      return v_flex()
-        .child(h_flex().id(`tok-${token}`).gap(8).px(6).py(3).rounded(6).items_center().cursor_pointer()
-          .when(on, (el) => el.bg(t.selected)).hover((st) => st.bg(t.hover))
-          .on_click((_e, cx) => this.selectTarget(`tok:${token}`, cx))
-          .child(swatch(c[token] || "#00000000"))
-          .child(div().flex_1().truncate().child(token))
-          .when(!!badge(token), (el) => el.child(badge(token)))
-          .child(div().w(76).text_size(11.5).text_color(staged ? t.accent : t.dim).child(staged ? (this.colorDraft[token] || "reset") : c[token] || "")))
-        .when(on, (el) => el.child(this.colorEditor(t, token.startsWith("ansi") || ["background", "terminal_foreground", "selection", "cursor"].includes(token)
-          ? "A terminal color: Reset doesn't apply; set it back by hand."
-          : "Reset drops your override and lets Herdr derive it from the terminal colors again.",
-          (cx) => this.stageColor(token, null, cx))));
+    const tile = (token) => {
+      const on = sel === `tok:${token}`, staged = token in this.colorDraft, badge = this.contrastBadge(t, c, token);
+      return v_flex().id(`tok-${token}`).w(118).p(5).gap(5).rounded(9).cursor_pointer()
+        .border_1().border_color(on ? t.accent : t.border).hover((st) => st.border_color(on ? t.accent : t.input))
+        .on_click((_e, cx) => this.selectTarget(`tok:${token}`, cx))
+        .child(div().relative().h(26).rounded(5).border_1().border_color(t.input).bg(c[token] || "#00000000")
+          .when(staged, (el) => el.child(div().absolute().top(4).right(4).size(6).rounded(3).bg(t.accent))))
+        .child(h_flex().px(2).gap(4).items_center()
+          .child(div().flex_1().min_w(0).truncate().text_size(11.5).child(TOKEN_LABELS[token] || token))
+          .when(!!badge, (el) => el.child(badge)));
     };
     const ansiTokens = GROUPS.find(([l]) => l === "Terminal ANSI")[1];
-    const ansi = (token) => div().id(`tok-${token}`).flex_1().h(22).rounded(4).bg(c[token]).cursor_pointer()
+    const ansi = (token) => div().id(`tok-${token}`).flex_1().h(24).rounded(5).bg(c[token]).cursor_pointer()
       .border_2().border_color(sel === `tok:${token}` ? t.foreground : "#00000000")
+      .tooltip(token)
       .on_click((_e, cx) => this.selectTarget(`tok:${token}`, cx));
-    const ansiSel = sel && sel.startsWith("tok:ansi") ? sel.slice(4) : null;
-    const behinds = [["", "Window background"], ["canvas", "Canvas"], ["chrome", "Chrome"], ["background", "Terminal"]];
+    const ansiRow = (label, tokens) => h_flex().gap(4).items_center().child(div().w(44).flex_none().text_size(10.5).text_color(t.dim).child(label)).children(tokens.map(ansi));
+    const behinds = [["", "Window"], ["canvas", "Canvas"], ["chrome", "Chrome"], ["background", "Terminal"]];
     const custom = g.behind && !behinds.some(([v]) => v === g.behind);
     const behind = this.personal()
-      ? v_flex().gap(6)
-        .child(h_flex().flex_wrap().gap(6)
-          .children(behinds.map(([v, label]) => this.pill(`behind-${v || "none"}`, label, g.behind === v, t, (_e, cx) => this.stageGlass({ behind: v }, cx))))
-          .child(this.chip(t, "behind-custom", "Custom", this.glassHex("behind"), custom || sel === "glass:behind", (_e, cx) => this.selectTarget("glass:behind", cx))))
-        .when(sel === "glass:behind", (el) => el.child(this.colorEditor(t, "A color you pick stays as it is when you change themes.")))
+      ? h_flex().gap(8).items_center()
+        .child(this.seg("behind", behinds, custom ? null : g.behind, t, (v, cx) => this.stageGlass({ behind: v }, cx), true))
+        .child(this.chip(t, "behind-custom", "Custom", this.glassHex("behind"), custom || sel === "glass:behind", (_e, cx) => this.selectTarget("glass:behind", cx)))
       : div().text_size(11.5).text_color(t.dim).child("Needs your own copy of this layout (Glass tab).");
     const cur = this.cursorShown();
-    const cursor = v_flex().gap(8)
-      .child(h_flex().flex_wrap().gap(6).items_center()
-        .children([["block", "Block"], ["underline", "Underline"], ["bar", "Bar"]].map(([v, label]) => this.pill(`cur-${v}`, label, cur.shape === v, t, (_e, cx) => this.stageCursor({ shape: v }, cx))))
-        .child(div().w(8))
-        .child(this.checkbox("cur-blink", "Blink", cur.blink, t, (_e, cx) => this.stageCursor({ blink: !cur.blink }, cx)))
-        .child(div().w(8))
-        .child(this.chip(t, "cur-color", "Color", c.cursor || c.foreground, sel === "tok:cursor", (_e, cx) => this.selectTarget("tok:cursor", cx))))
-      .when(sel === "tok:cursor", (el) => el.child(this.colorEditor(t, "Saves to the theme, like the colors below.")))
-      .when(!this.cursorHooked, (el) => el.child(h_flex().gap(8).items_center()
-        .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.dim).line_height("17px").child("Apply changes the shape in open panes. Herdr has no cursor-shape setting, so for new panes add this line to ~/.zshrc once (the Studio doesn't edit it):"))
-        .child(this.button("cur-copy", "Copy line", t, (_e, cx) => { cx.write_to_clipboard(CURSOR_LINE); this.say("Copied. Paste it at the end of ~/.zshrc", "success", cx); }))));
-    const body = v_flex().gap(14)
-      .child(div().text_size(11.5).text_color(t.dim).child(`Theme colors save to themes/${editing}.json. Click a color to edit it.`))
-      .child(this.section("Cursor", t, cursor, "The color saves to the theme. Shape and blink go to every Herdr pane: programs like vim may change them until the next prompt."))
+    const cursor = v_flex().gap(2)
+      .child(this.row(t, "Shape", this.seg("cur", [["block", "Block"], ["underline", "Underline"], ["bar", "Bar"]], cur.shape, t, (v, cx) => this.stageCursor({ shape: v }, cx))))
+      .child(this.row(t, "Blink", this.toggle("cur-blink", cur.blink, t, (_e, cx) => this.stageCursor({ blink: !cur.blink }, cx))))
+      .child(this.row(t, "Color", this.chip(t, "cur-color", "Cursor", c.cursor || c.foreground, sel === "tok:cursor", (_e, cx) => this.selectTarget("tok:cursor", cx))));
+    const hook = this.cursorHooked ? null : h_flex().gap(6).items_center()
+      .child(div().text_size(11.5).text_color(t.dim).child("New panes need one line in ~/.zshrc."))
+      .child(this.link("cur-copy", "Copy line", t, (_e, cx) => { cx.write_to_clipboard(CURSOR_LINE); this.say("Copied. Paste it at the end of ~/.zshrc", "success", cx); }));
+    return v_flex().gap(22)
+      .child(this.section("Cursor", t, cursor, "The color saves to the theme. Shape and blink go to every Herdr pane; programs like vim may change them until the next prompt. Herdr has no cursor-shape setting, so new panes get it from a line in ~/.zshrc (the Studio doesn't edit that file).", { hint: hook }))
       .children(GROUPS.map(([label, tokens]) => label === "Terminal ANSI"
-        ? this.section(label, t, v_flex().gap(4).child(h_flex().gap(4).children(tokens.slice(0, 8).map(ansi))).child(h_flex().gap(4).children(tokens.slice(8).map(ansi)))
-            .when(!!ansiSel && ansiTokens.includes(ansiSel), (el) => el.child(this.colorEditor(t, `${ansiSel}: a terminal color. Reset doesn't apply; set it back by hand.`))))
-        : this.section(label, t, v_flex().children(tokens.map(row)))))
+        ? this.section("Terminal colors", t, v_flex().gap(4).child(ansiRow("Normal", ansiTokens.slice(0, 8))).child(ansiRow("Bright", ansiTokens.slice(8))),
+          "The 16 colors programs print with; Herdr works most of the other colors out from them. Their Reset only undoes an unsaved change.")
+        : this.section(label, t, h_flex().flex_wrap().gap(6).children(tokens.map(tile)),
+          label === "Surfaces" ? `Click a color to edit it. Theme colors save to themes/${this.editing}.json; a changed color shows a dot. Reset lets Herdr work a color out from the terminal colors again.` : null)))
       .child(this.section("Behind panes", t, behind,
-        "The gap between panes and the corners outside each pane's rounding. This one saves to your layout, not the theme. Window background paints nothing there, so the window's own background shows through. Canvas, Chrome and Terminal are the theme's colors above and follow the theme when it changes; a custom color stays as you set it."));
-    return { head: v_flex().gap(8).child(this.windowPreview(t)).child(this.applyBar(t)), body };
+        "The gap between panes and the corners outside each pane's rounding. This one saves to your layout, not the theme. Window lets the window's own background show through. Canvas, Chrome and Terminal follow the theme; a custom color stays as you set it."));
   }
 
-  // Type picks are staged: Herdr takes up to ~10 s to show some of them, so the sample shows them at
-  // once and Apply writes them together.
+  typeTab(t, s, cx) {
+    const { v } = this.typeValues(s);
+    const fonts = v_flex().gap(2)
+      .child(this.row(t, "Terminal", h_flex().flex_1().min_w(0).gap(6).items_center()
+        .child(this.fontPicker(t, "font", v.font))
+        .child(this.stepper(t, v.font_size, MIN_SIZE, MAX_SIZE, (n, cx) => this.stage("font_size", n, cx)))))
+      .child(this.row(t, "Ligatures", this.toggle("lig", v.font_ligatures, t, (_e, cx) => this.stage("font_ligatures", !v.font_ligatures, cx))))
+      .child(this.row(t, "Panels", this.fontPicker(t, "ui_font", v.ui_font)));
+    const folder = h_flex().gap(6).items_center()
+      .child(div().text_size(11.5).text_color(t.dim).child("Your own .ttf and .otf files load from the fonts folder."))
+      .child(this.link("fonts-open", "Open it", t, (_e, cx) => cx.spawn(async () => { await fs.mkdir(`${HOME}/fonts`, { recursive: true }).catch(() => {}); await exec("open", [`${HOME}/fonts`]); })));
+    return v_flex().gap(22)
+      .child(this.section("Fonts", t, fonts,
+        "Herdr has no font weight, character or line spacing, or anti-aliasing settings, so those aren't here. Panel text has no size setting either: panels follow Herdr's zoom (⌘+ / ⌘−). Fonts in the fonts folder load without installing them system-wide.", { hint: folder }))
+      .child(this.section("Minimum contrast", t, this.row(t, "Lift faint text",
+        this.seg("mc", CONTRASTS.map((n) => [n, n === 1 ? "Off" : String(n)]), v.minimum_contrast, t, (n, cx) => this.stage("minimum_contrast", n, cx), true)),
+        "Lifts terminal text that's too faint for its background, up to the ratio you pick. Off leaves programs' colors alone. The sample's lift and ligatures are close to Herdr's, not exact."));
+  }
+
+  glassTab(t, s, cx) {
+    if (!this.personal()) return this.needsCopy(t, "Glass needs your own copy of this layout",
+      `Herdr's own layouts (${shared("layout")}) only take theme and background changes. A copy takes everything: terminal opacity, translucent sidebars, pane corners and gaps. Herdr updates won't change your copy; you can switch back any time with ⌘⇧L. The Studio closes for a moment while Herdr switches.`, "glass");
+    const g = this.glassShown(), c = this.themeColors(), sel = this.pickTarget;
+    const fmt = { opacity: (v) => `${Math.round(v * 100)}%`, chrome: (v) => `${Math.round(v * 100)}%`, radius: (v) => `${v}px`, gap: (v) => `${v}px`, margin: (v) => `${v}px`, angle: (v) => `${v}°`, glowIntensity: (v) => `${v}%` };
+    const slider = (k, label) => this.slider(t, this.sliders[k], k, label, fmt[k](g[k]));
+    const chips = (keys) => h_flex().flex_wrap().gap(6).children(keys.map(([k, label]) => this.chip(t, `gc-${k}`, label, this.glassHex(k), sel === `glass:${k}`, (_e, cx) => this.selectTarget(`glass:${k}`, cx))));
+    const thumb = (name, p) => {
+      const on = Object.entries(p).every(([k, v]) => g[k] === v);
+      const back = p.bg === "theme" ? c.canvas : p.bg === "frost" ? withAlpha(c.muted, 0.45) : withAlpha(c.accent, 0.4);
+      const pane = () => div().flex_1().h_full().rounded(Math.round(p.radius / 2)).bg(withAlpha(c.background, p.opacity));
+      return v_flex().id(`gp-${name}`).flex_1().p(5).gap(5).rounded(10).cursor_pointer()
+        .border_1().border_color(on ? t.accent : t.border).hover((st) => st.border_color(on ? t.accent : t.input))
+        .on_click((_e, cx) => this.stageGlass({ ...p }, cx))
+        .child(div().h(46).rounded(6).overflow_hidden().bg(c.canvas)
+          .child(h_flex().size_full().p(4).gap(3).bg(back).child(div().w(16).h_full().rounded(3).bg(withAlpha(c.chrome, p.chrome))).child(pane()).child(pane())))
+        .child(h_flex().px(3).gap(4).items_center().child(div().flex_1().text_size(12).child(name))
+          .when(on, (el) => el.child(svg(`${ICONS}/check.svg`).size(13).text_color(t.accent))));
+    };
+    const bgs = [["theme", "Theme"], ["gradient", "Gradient"], ["bloom", "Bloom"], ["frost", "Wallpaper"], ["image", "Image"]];
+    const background = v_flex().gap(2)
+      .child(h_flex().pb(6).child(this.seg("bg", bgs, g.bg, t, (v, cx) => this.stageGlass({ bg: v }, cx), true)))
+      .when(g.bg === "gradient", (el) => el.child(this.row(t, "Colors", chips([["from", "From"], ["to", "To"]]))).child(slider("angle", "Angle")))
+      .when(g.bg === "bloom", (el) => el.child(this.row(t, "Glows", chips([["bloomBase", "Base"], ["glowA", "Glow 1"], ["glowB", "Glow 2"], ["glowC", "Glow 3"]]))).child(slider("glowIntensity", "Glow strength")))
+      .when(g.bg === "frost", (el) => el.child(this.row(t, "Wallpaper", h_flex().flex_1().gap(8).items_center()
+        .child(div().flex_1().text_size(11.5).text_color(t.dim).child("Your desktop picture, blurred."))
+        .child(this.button("frost-now", "Rebuild", t, (_e, cx) => cx.spawn((cx) => this.guard(cx, "Blurring wallpaper", async () => { await this.refreshFrost(cx, true); this.pushGlass(); this.say("Frosted wallpaper rebuilt", "success", cx); })))))))
+      .when(g.bg === "image", (el) => el.child(this.row(t, "Picture", h_flex().id("img-drop").flex_1().min_w(0).gap(6).on_drop((e, cx) => this.useImage(e.paths && e.paths[0], cx))
+        .child(this.button("img-choose", "Choose…", t, (_e, cx) => this.chooseImage(cx)))
+        .child(Input.new(this.imagePath).flex_1().min_w(0).h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+        .child(this.button("img-set", "Use", t, (_e, cx) => this.useImage(this.imagePath.value().trim(), cx))))));
+    const tips = {
+      theme: "The theme's canvas color.", gradient: "A straight gradient from one color to the other. Clear a color's hex box to go back to the theme's accent (From) or canvas (To).",
+      bloom: "Soft glows behind the glass. Herdr can only paint a flat color, a straight gradient or a picture behind panes, so the Studio renders the glows into a picture (backgrounds/studio-bloom-*.jpg), redrawn as you change it and when the theme changes.",
+      frost: "Your desktop picture, blurred. It shows the wallpaper only, not the windows behind Herdr, and it doesn't move with the window. Rebuilt when the wallpaper changes and you open the Studio.",
+      image: "Choose a picture, drop one on the row, or type a path. Herdr only reads pictures in its own folder, so one from elsewhere is copied into backgrounds/ first.",
+    };
+    return v_flex().gap(22)
+      .child(this.section("Start from", t, h_flex().gap(8).children(Object.entries(GLASS_PRESETS).map(([n, p]) => thumb(n, p))),
+        "A starting point: it sets every control below at once. Change any of them after."))
+      .child(this.section("Window background", t, background, tips[g.bg]))
+      .child(this.section("Glass surfaces", t, v_flex().gap(2).child(slider("chrome", "Sidebar and bar")).child(slider("opacity", "Terminal")),
+        "Below 100%, the window background shows through. A busy background needs more opacity to keep text readable. The glass takes the theme's chrome and terminal colors: change those on the Colors tab."))
+      .child(this.section("Pane frames", t, v_flex().gap(2).child(slider("radius", "Corner radius")).child(slider("margin", "Margin")).child(slider("gap", "Gap")),
+        "The margin frames the pane area, even with one pane. The gap shows between split panes and beside the side panel. Their color is on the Colors tab, under Behind panes.",
+        { hint: "Seeing other windows through Herdr needs a Herdr setting that doesn't exist yet (herdr-app issue #190)." }));
+  }
+
+  agentsTab(t, s, cx) {
+    if (!this.personal()) return this.needsCopy(t, "The agents list needs your own copy of this layout",
+      `Herdr's own layouts (${shared("layout")}) can't swap their agents list. A copy can: it shows the Studio's version of the list, a copy of Herdr's with your sizes. The Studio closes for a moment while Herdr switches.`, "agents");
+    const a = this.agentsShown(), sel = this.pickTarget;
+    const px = (v) => `${v}px`;
+    const slider = (k, label) => this.slider(t, this.agentSliders[k], `ag-${k}`, label, px(a[k]));
+    const preset = Object.entries(AGENT_PRESETS).find(([, p]) => Object.keys(p).every((k) => p[k] === a[k]));
+    const seg = (id, opts, key) => this.seg(id, opts, a[key], t, (v, cx) => this.stageAgents({ [key]: v }, cx), true);
+    const sw = (id, label, key) => this.row(t, label, this.toggle(id, a[key], t, (_e, cx) => this.stageAgents({ [key]: !a[key] }, cx)));
+    return v_flex().gap(22)
+      .child(this.section("Layout", t, v_flex().gap(2)
+        .child(this.row(t, "Density", this.seg("agp", Object.keys(AGENT_PRESETS).map((n) => [n, n]), preset ? preset[0] : null, t, (n, cx) => this.stageAgents({ ...AGENT_PRESETS[n] }, cx), true)))
+        .child(this.row(t, "Rows", seg("agl", [["one", "One line"], ["two", "Two lines"], ["auto", "Auto"]], "lines")))
+        .child(this.row(t, "Title", seg("agd", [["space", "Workspace"], ["session", "Session"]], "lead")))
+        .child(this.row(t, "Status", seg("ags", [["left", "Left"], ["right", "Right"]], "statusSide"))),
+        "Comfortable is Herdr's own list. Two lines put the detail, time and status under the name; Auto does that only when a name is too long for one line, so it follows the sidebar's width. Title is what leads a row that names both the workspace and the session; under a workspace's own header a row shows only the session. Status on the left is the small form (spinner, dot, !)."))
+      .child(this.section("Cards", t, v_flex().gap(2)
+        .child(this.row(t, "Colors", h_flex().flex_1().flex_wrap().gap(6).children(AGENT_COLORS.map(([k, label]) => this.chip(t, `agc-${k}`, label, this.agentHex(k, a), sel === `agent:${k}`, (_e, cx) => this.selectTarget(`agent:${k}`, cx))))))
+        .child(this.row(t, "Name weight", seg("agw", [["normal", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]], "weight")))
+        .child(slider("radius", "Corner radius")).child(slider("pad", "Side padding")).child(slider("space", "Spacing")),
+        "A color you pick stays when you change themes; the ones left unset follow the theme. A Card color, a Border or some spacing turns each agent into its own card."))
+      .child(this.section("Sizes", t, v_flex().gap(2).child(slider("row", "Row height")).child(slider("text", "Name text")).child(slider("icon", "Icon")).child(slider("header", "Group header")),
+        "Heights and text sizes in points, at Herdr's normal zoom.", { fold: "sizes", count: "4 sliders" }))
+      .child(this.section("Other text", t, v_flex().gap(2).child(slider("headerText", "Group headers")).child(slider("timeText", "Time since")).child(slider("detailText", "Second line"))
+        .child(slider("titleText", "\"Agents\" title")).child(slider("badgeText", "\"Needs you\"")), null, { fold: "text", count: "5 sliders" }))
+      .child(this.section("Show", t, v_flex().gap(2)
+        .child(sw("ag-time", "Time since", "time")).child(sw("ag-headers", "Group headers", "headers"))
+        .child(sw("ag-icons", "Agent icons", "icons")).child(sw("ag-badge", "\"Needs you\" badge", "badge")),
+        "Time since is 3m, 12m. Group headers are Working, Pinned and the rest. Without the badge, an agent that needs you shows a small !. Your layout copy shows the Studio's copy of Herdr's agents list once anything here differs from Herdr's; it's rebuilt from Herdr's list on each Save, so Herdr's updates still reach it."));
+  }
+
+  // Settings that belong to the person, not a theme: they apply at once and stay across themes.
+  settingsView(t) {
+    if (!this.personal()) return this.needsCopy(t, "Settings need your own copy of this layout",
+      `Herdr's own layouts (${shared("layout")}) can't change. A copy can hide its sidebar and hold the palette icon; Herdr keeps updating everything else. The Studio closes for a moment while Herdr switches.`, "colors");
+    const mode = autoHideMode(layout()), auto = !!mode, icon = hasFooterIcon(layout());
+    return v_flex().gap(22)
+      .child(this.section("Sidebar", t, v_flex().gap(10)
+          .child(this.row(t, "Auto-hide", this.toggle("set-autohide", auto, t, (_e, cx) => this.setAutoHide(!auto, cx))))
+          .when(auto, (el) => el.child(this.row(t, "Folds to", this.seg("set-ahmode", [["rail", "Minimal"], ["hidden", "Hidden"]], mode, t, (m, cx) => m !== mode && this.setAutoHide(true, cx, m))))),
+        "Keeps the sidebar out of the way until you need it: folded to the same narrow rail as Herdr's own fold button, or hidden entirely. Rest the pointer on the rail (or, when hidden, at the window's left edge) and it opens, with the terminals making room; move well past it and it folds back a moment later. Opened with Herdr's own fold button, it stays open.",
+        { hint: !auto ? null : mode === "rail" ? "Rest the pointer on the rail to open the sidebar." : "Move the pointer to the window's left edge to bring it back." }))
+      .child(this.section("Palette icon", t, this.row(t, "Beside Settings", this.toggle("set-icon", icon, t, (_e, cx) => this.setButton(!icon, cx))),
+        "An icon in the sidebar's Settings row (under Settings on the narrow rail) that opens Theme Studio. Herdr's own Settings screen can't take extra sections, so it lives there."));
+  }
+
+  // Glass and Agents on one of Herdr's own layouts: what a copy is, and the button that makes it.
+  needsCopy(t, title, text, tab) {
+    return v_flex().gap(12).p(14).rounded(10).bg(t.raised).border_1().border_color(t.border)
+      .child(div().font_semibold().child(title))
+      .child(div().text_size(12.5).text_color(t.muted).line_height("19px").child(text))
+      .child(h_flex().child(this.button("copy-layout", `Make my copy of ${shared("layout")}`, t, (_e, cx) => this.makeCopy(cx, tab), true)));
+  }
+
   typeValues(s) {
     const now = { font: s.font_family, ui_font: s.ui_font_family, font_size: s.font_size, font_ligatures: !!s.font_ligatures, minimum_contrast: s.minimum_contrast ?? 1 };
     return { now, v: { ...now, ...this.draft } };
@@ -1145,13 +1480,11 @@ export default class ThemeStudio extends View {
     cx.notify();
   }
 
-
-
   typeSample(t, v) {
     const bg = t.background, fg = t.foreground, min = v.minimum_contrast;
     const c = (hex) => liftContrast(hex, bg, min);
     const line = (...parts) => h_flex().children(parts.map(([text, color]) => div().text_color(c(color)).child(v.font_ligatures ? text : breakLigatures(text))));
-    return v_flex().gap(2).p(12).rounded(8).border_1().border_color(t.border).bg(bg).font_family(v.font).text_size(v.font_size).line_height(`${Math.round(v.font_size * 1.45)}px`)
+    return v_flex().flex_none().gap(2).p(14).rounded(10).border_1().border_color(t.border).bg(bg).font_family(v.font).text_size(v.font_size).line_height(`${Math.round(v.font_size * 1.45)}px`)
       .child(line(["❯ ", t.ansi2], ["git ", fg], ["status", t.ansi4]))
       .child(line(["On branch ", fg], ["main", t.ansi5], ["  0O 1lI {}[]", t.ansi8]))
       .child(line(["const ok = a -> b != c && d => e;", t.ansi3]))
@@ -1172,201 +1505,133 @@ export default class ThemeStudio extends View {
       .on_click((_e, cx) => { this.fontOpen = null; this.stage(target, f, cx); })
       .child(div().flex_1().truncate().font_family(f).text_size(14).child(f))
       .child(div().text_size(11).text_color(t.dim).font_family(f).child("Ag 0O il1 =>"));
-    const trigger = h_flex().id(`font-trigger-${target}`).flex_1().min_w(0).h(32).px(10).gap(8).items_center().rounded(7).cursor_pointer()
+    const trigger = h_flex().id(`font-trigger-${target}`).flex_1().min_w(0).h(30).px(10).gap(8).items_center().rounded(8).cursor_pointer()
       .border_1().border_color(open ? t.accent : t.input).bg(t.background)
       // A press on the trigger first closes an open menu as a press outside it: don't reopen.
       .on_click((_e, cx) => { this.fontOpen = !open && Date.now() - (this.fontClosedAt || 0) > 300 ? target : null; cx.notify(); })
-      .child(div().flex_1().truncate().font_family(current).text_size(14).child(current))
-      .child(div().text_size(11).text_color(t.dim).child(open ? "▴" : "▾"));
+      .child(div().flex_1().truncate().font_family(current).text_size(13).child(current))
+      .child(svg(`${ICONS}/chevron.svg`).size(13).flex_none().text_color(t.dim));
     return Popup.new(`font-popup-${target}`, trigger).anchor("top_left").flex_1().min_w(0)
-      .when(open, (el) => el.content(v_flex().id("font-menu").w(420).p(6).gap(6).rounded(8)
-        .border_1().border_color(t.border).bg(t.popover).shadow_lg()
+      .when(open, (el) => el.content(v_flex().id("font-menu").w(340).p(6).gap(6).rounded(10)
+        .border_1().border_color(t.input).bg(t.raised).shadow_lg()
         .on_mouse_down_out((_e, cx) => { this.fontOpen = null; this.fontClosedAt = Date.now(); cx.notify(); })
-        .child(Input.new(this.fontIn).h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+        .child(Input.new(this.fontIn).h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
         .child(div().px(2).text_size(11).text_color(t.dim).child(target === "font" && !q ? "Monospaced fonts only. Type to search every font." : `${list.length} of ${fonts().length} fonts`))
-        .child(v_flex().id("font-list").h(220).overflow_y_scrollbar().children(list.map(row)))));
+        .child(v_flex().id("font-list").h(240).overflow_y_scrollbar().children(list.map(row)))));
   }
 
-  // Size box with up/down steps, like a native stepper.
+  // Size box with − and + either side, like the window's own steppers.
   stepper(t, value, min, max, onStep) {
-    const arrow = (id, label, d) => div().id(id).h(15).w(18).flex().items_center().justify_center().text_size(9).text_color(t.muted)
-      .rounded(3).cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground))
+    const step = (id, label, d) => div().id(id).w(26).h_full().flex().items_center().justify_center().text_size(14).text_color(t.muted).cursor_pointer()
+      .hover((st) => st.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => { const n = Math.min(max, Math.max(min, value + d)); if (n !== value) onStep(n, cx); })
       .child(label);
-    return h_flex().h(32).pl(10).pr(3).gap(4).items_center().rounded(7).border_1().border_color(t.input).bg(t.background)
-      .child(div().w(22).text_size(13.5).child(String(value)))
-      .child(v_flex().child(arrow("size-up", "▲", 1)).child(arrow("size-down", "▼", -1)));
+    return h_flex().flex_none().h(30).items_center().rounded(8).overflow_hidden().border_1().border_color(t.input).bg(t.background)
+      .child(step("size-down", "−", -1)).child(div().w(30).text_center().text_size(12.5).child(String(value))).child(step("size-up", "+", 1));
   }
 
-  // A labelled slider with its value on the right.
-  slider(t, state, id, label, value) {
-    return v_flex().gap(4)
-      .child(h_flex().justify_between().child(div().text_color(t.muted).child(label)).child(div().text_size(12).child(value)))
-      .child(Slider.new(state).child(SliderTrack.new(state).flex().items_center().h(22).w_full().cursor_pointer()
-        .child(SliderIndicator.new(state).relative().w_full().h(4).rounded(2).bg(t.input)
-          .range_style((f) => f.rounded(2).bg(t.accent))
-          // A 24x16 pill; the shell places its top-left at the groove's top, so it's pulled back by half its size less the 4px groove.
-          .child(SliderThumb.new(state).id(`thumb-${id}`).w(24).h(16).rounded(8).bg(t.foreground).border_2().border_color(t.accent).ml(-12).mt(-6)))));
+  // The picker for the selected color: swatch and name, hex box, Reset ({ can, tip, run }), and
+  // hue/saturation/lightness/alpha strips. Each strip shows what its slider would give.
+  colorEditor(t, label, code, reset, badge) {
+    const P = this.pick;
+    const strips = [
+      ["H", (k) => hslaToHex(k * 359, 100, 50)],
+      ["S", (k) => hslaToHex(P[0], k * 100, P[2])],
+      ["L", (k) => hslaToHex(P[0], P[1], k * 100)],
+      ["A", (k) => hslaToHex(P[0], P[1], P[2], k * 100)],
+    ];
+    const row = ([name, fn], i) => h_flex().gap(8).items_center()
+      .child(div().w(12).text_size(10.5).text_color(t.dim).child(name))
+      // The strip sits under the slider: the indicator draws only the thumb.
+      .child(div().relative().flex_1()
+        .child(h_flex().absolute().top(5).left(0).w_full().h(8).rounded(4).bg(t.background)
+          // overflow_hidden doesn't clip to the radius, so the end bands round themselves.
+          .children(Array.from({ length: 48 }, (_, j) => div().flex_1().h_full().bg(fn(j / 47)).when(j === 0, (el) => el.rounded_l(4)).when(j === 47, (el) => el.rounded_r(4)))))
+        .child(Slider.new(this.pickers[i]).child(SliderTrack.new(this.pickers[i]).flex().items_center().h(18).w_full().cursor_pointer()
+          .child(SliderIndicator.new(this.pickers[i]).relative().w_full().h(8)
+            .range_style((f) => f)
+            // A 14px ring on an 8px strip: pulled back half its width and 3px up.
+            .child(SliderThumb.new(this.pickers[i]).id(`pick-${name}`).size(14).rounded(7).border_2().border_color("#ffffff").ml(-7).mt(-3))))))
+      .child(div().w(28).text_size(11).text_color(t.muted).text_right().child(String(P[i])));
+    return v_flex().gap(10)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(h_flex().gap(10).items_center()
+        .child(div().size(40).flex_none().rounded(10).border_1().border_color(t.input).bg(hslaToHex(...P)))
+        .child(v_flex().flex_1().min_w(0)
+          .child(h_flex().gap(6).items_center().child(div().min_w(0).truncate().text_size(13).font_semibold().child(label)).when(!!badge, (el) => el.child(badge)))
+          .child(div().text_size(11).text_color(t.dim).truncate().child(code)))
+        .child(Input.new(this.hex).w(96).flex_none().h(28).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12))
+        .child(this.button("hex-set", "Set", t, (_e, cx) => this.stageHex(this.hex.value(), cx)))
+        .when(!!reset, (el) => el.child(this.iconButton("hex-reset", "undo", reset.tip, t, (_e, cx) => { if (reset.can) reset.run(cx); }, false, !reset.can)))
+        .child(this.iconButton("hex-close", "close", "Close the picker", t, (_e, cx) => this.selectTarget(null, cx, false))))
+      .child(v_flex().gap(2).children(strips.map(row)));
   }
 
-  checkbox(id, label, on, t, onClick) {
-    return h_flex().id(id).gap(8).items_center().cursor_pointer().on_click(onClick)
-      .child(div().size(16).rounded(4).flex().items_center().justify_center().text_size(11)
-        .when(on, (el) => el.bg(t.accent).text_color(t.accent_foreground).child("✓"))
-        .when(!on, (el) => el.border_1().border_color(t.input).bg(t.background)))
-      .child(div().child(label));
+  // The small mock Herdr window, drawn from the staged colors, glass, type and agents list:
+  // backdrop, sidebar with spaces and agents, tab bar, two pane cards over the behind-panes color.
+  windowPreview(t) {
+    const c = { ...t, ...this.themeColors() }, g = this.glassShown(), base = this.baseColors(g, c), v = this.typeValues(this.shown()).v;
+    const behind = g.behind ? this.glassHex("behind", g, c) : null;
+    const see = g.opacity < 1;
+    const chrome = withAlpha(base.chrome, g.chrome), term = see ? withAlpha(base.background, g.opacity) : c.background;
+    // ponytail: the gradient snaps to the nearest of four directions; Herdr draws the exact angle.
+    const a = ((g.angle % 360) + 360) % 360, across = (a > 45 && a < 135) || (a > 225 && a < 315);
+    const flip = across ? a > 180 : !(a >= 135 && a <= 225);
+    const from = this.glassHex("from", g, c), to = this.glassHex("to", g, c);
+    const bands = Array.from({ length: 24 }, (_, i) => div().flex_1().bg(withAlpha(from, flip ? i / 23 : 1 - i / 23)));
+    const path = g.bg === "frost" ? g.frost : g.bg === "image" ? g.image : g.bg === "bloom" ? g.bloom : "";
+    const backdrop = g.bg === "gradient" ? (across ? h_flex() : v_flex()).size_full().bg(to).children(bands)
+      : g.bg === "bloom" && (this.bloomPending || !path) ? this.bloomMock(g, c)
+      : path ? image(path).size_full() : div().size_full().bg(g.bg === "bloom" ? this.glassHex("bloomBase", g, c) : c.canvas);
+    const size = v.font_size, text = c.terminal_foreground || c.foreground;
+    const line = (parts) => h_flex().gap(Math.round(size * 0.6)).children(parts.map(([s, col]) => div().text_color(col).child(v.font_ligatures ? s : breakLigatures(s))));
+    const card = (title, lines, tail) => v_flex().flex_1().h_full().min_w(0).rounded(g.radius).overflow_hidden().bg(term)
+      .child(div().h(26).flex_none().px(10).flex().items_center().text_size(11).text_color(c.muted).border_b_1().border_color(c.border).child(title))
+      .child(v_flex().p(10).gap(1).font_family(v.font).text_size(size).line_height(`${Math.round(size * 1.5)}px`)
+        .children(lines.map((l, i) => i === lines.length - 1 && tail ? line(l).child(tail) : line(l))));
+    const space = (letter, name, color, on) => h_flex().h(28).px(8).gap(8).items_center().rounded(6).when(on, (el) => el.bg(c.selected))
+      .child(div().size(16).flex_none().rounded(4).bg(color).flex().items_center().justify_center().text_size(9.5).font_bold().text_color(c.background).child(letter))
+      .child(div().min_w(0).truncate().text_size(12.5).child(name));
+    return div().relative().size_full().rounded(12).overflow_hidden().border_1().border_color(t.border).bg(c.canvas).text_color(c.foreground).font_family(v.ui_font)
+      .child(div().absolute().inset_0().child(backdrop))
+      .child(h_flex().absolute().inset_0()
+        .child(v_flex().w(210).h_full().flex_none().bg(chrome).border_r_1().border_color(c.border).p(8).gap(2).overflow_hidden()
+          .child(h_flex().px(6).pt(2).pb(4).justify_between().text_size(11).text_color(c.dim).child("Spaces").child("+"))
+          .child(space("H", "herdr-app-theming", c.ansi6, true))
+          .child(space("A", "agent-tools-private", c.ansi3, false))
+          .child(div().h(12))
+          .child(this.agentsPreview(c, this.agentsShown())))
+        .child(v_flex().flex_1().h_full().min_w(0)
+          .child(h_flex().h(34).flex_none().px(10).gap(6).items_center().bg(chrome).border_b_1().border_color(c.border)
+            .child(div().w(64).h(20).rounded(6).bg(c.selected)).child(div().w(52).h(20).rounded(6).bg(c.hover)).child(div().w(52).h(20).rounded(6).bg(c.hover)))
+          .child(h_flex().flex_1().min_h(0).p(g.margin).gap(g.gap).when(!!behind, (el) => el.bg(behind))
+            .child(card("zsh", [[["~/app", c.ansi4], ["main", c.ansi5]], [["$ npm test", text]], [["✓ 42 passed", c.ansi2]], [["# 3 suites, 0.8s", c.ansi8]], [["$ git status", text]], [["On branch", text], ["main", c.ansi2]]]))
+            .child(card("claude", [[["● Reading lib.js", c.ansi3]], [["  edits ready", c.muted]], [["Update(main.js)", c.ansi6]], [["  - .px(8)", c.ansi1]], [["  + .px(pad)", c.ansi2]], [["❯", c.accent]]], this.cursorMark(c, size))))));
   }
 
-  // The editor's bar under its preview: "N changes not saved" with Discard and Save. After Back with
-  // unsaved changes it asks instead. One Save writes what every tab has staged.
-  applyBar(t) {
-    const c = this.changes(), n = c.type + c.colors + c.glass + c.agents;
-    const where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass], ["Agents", c.agents]].filter(([, k]) => k).map(([w]) => w).join(", ");
-    if (this.leaving && n) return h_flex().gap(6).items_center()
-      .child(div().flex_1().min_w(0).text_size(12).child(`Save your changes to ${this.editing}?`))
-      .child(this.button("stay", "Keep editing", t, (_e, cx) => { this.leaving = false; cx.notify(); }))
-      .child(this.button("discard", "Discard", t, (_e, cx) => { this.cancelAll(cx); this.goTo("themes", cx); }))
-      .child(this.button("save-leave", "Save", t, (_e, cx) => this.saveEdit(cx, () => this.goTo("themes", cx)), true));
-    return h_flex().gap(6).items_center()
-      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(n ? t.foreground : t.dim)
-        .child(n ? `${n} change${n > 1 ? "s" : ""} not saved (${where})` : `Change anything below; Save keeps it in ${this.editing}.`))
-      .when(n > 0, (el) => el.child(this.button("cancel-all", "Discard", t, (_e, cx) => this.cancelAll(cx))))
-      .child(this.button("apply-all", "Save", t, (_e, cx) => this.saveEdit(cx), n > 0));
+  // The bloom drawn straight from its recipe, while the picture for Herdr is being rendered (it takes
+  // a second or two), so the preview follows a drag. Rings stand in for the soft falloff.
+  bloomMock(g, c) {
+    const spec = bloomSpec(this.glassHex("bloomBase", g, c), ["glowA", "glowB", "glowC"].map((k) => this.glassHex(k, g, c)), g.glowIntensity), N = 8;
+    return div().relative().size_full().overflow_hidden().bg(spec.base)
+      .children(spec.glows.flatMap((o) => Array.from({ length: N }, (_, i) => {
+        const w = o.r * 2 * (1 - i / N) * 100, h = (w * spec.w) / spec.h;
+        return div().absolute().left(`${o.x * 100 - w / 2}%`).top(`${o.y * 100 - h / 2}%`).w(`${w}%`).h(`${h}%`).rounded(9999).bg(withAlpha(o.c, Math.min(1, (o.a / N) * 1.5)));
+      })));
   }
 
-  typeTab(t, s, cx) {
-    const { v } = this.typeValues(s);
-    const label = (text) => div().w(64).flex_none().text_color(t.muted).child(text);
-    const preview = v_flex().gap(8)
-      .child(this.typeSample({ ...t, ...this.themeColors() }, v))
-      .child(this.applyBar(t));
-    const body = v_flex().gap(16)
-      .child(this.section("Font", t, v_flex().gap(10)
-        .child(h_flex().gap(8).items_center().child(label("Terminal"))
-          .child(this.fontPicker(t, "font", v.font))
-          .child(this.stepper(t, v.font_size, MIN_SIZE, MAX_SIZE, (n, cx) => this.stage("font_size", n, cx))))
-        .child(h_flex().pl(72).child(this.checkbox("lig", "Use ligatures", v.font_ligatures, t, (_e, cx) => this.stage("font_ligatures", !v.font_ligatures, cx))))
-        .child(h_flex().gap(8).items_center().child(label("Panels")).child(this.fontPicker(t, "ui_font", v.ui_font))),
-        "Herdr has no font weight, character or line spacing, or anti-aliasing settings, so those aren't here. Panel text has no size setting either: panels follow Herdr's zoom (⌘+ / ⌘−)."))
-      .child(this.section("Minimum contrast", t, h_flex().flex_wrap().gap(6)
-        .children(CONTRASTS.map((n) => this.pill(`mc-${n}`, String(n), v.minimum_contrast === n, t, (_e, cx) => this.stage("minimum_contrast", n, cx)))),
-        "Lifts terminal text that's too faint for its background. 1 leaves programs' colors alone. The preview's lift and ligatures are close to Herdr's, not exact."))
-      .child(this.section("Your own font files", t, h_flex().gap(8).items_center()
-        .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(".ttf or .otf files in the fonts folder load without installing them system-wide."))
-        .child(this.button("fonts-open", "Open fonts folder", t, (_e, cx) => cx.spawn(async () => { await fs.mkdir(`${HOME}/fonts`, { recursive: true }).catch(() => {}); await exec("open", [`${HOME}/fonts`]); })))));
-    return { head: preview, body };
+  // The terminal cursor in the mock window, in its staged shape and color (blink isn't shown).
+  cursorMark(c, size) {
+    const col = c.cursor || c.foreground, shape = this.cursorShown().shape, w = Math.round(size * 0.6), h = size + 2;
+    return h_flex().h(h).items_center()
+      .child(shape === "bar" ? div().w(1.5).h(h).bg(col) : shape === "underline" ? div().w(w).h(h).flex().items_end().child(div().w_full().h(1.5).bg(col)) : div().w(w).h(h).bg(col));
   }
 
-  glassTab(t, s, cx) {
-    if (!this.personal()) {
-      return v_flex().gap(12).p(12).rounded(8).bg(t.raised)
-        .child(div().font_semibold().child("Glass needs your own copy of this layout"))
-        .child(div().text_color(t.muted).line_height("19px").child(`Herdr's own layouts (${shared("layout")}) only take theme and background changes. A copy takes everything: terminal opacity, translucent sidebars, pane corners and gaps. Herdr updates won't change your copy; you can switch back any time with ⌘⇧L. The Studio closes for a moment while Herdr switches.`))
-        .child(h_flex().child(this.button("copy", `Make my copy of ${shared("layout")}`, t, (_e, cx) => this.makeCopy(cx), true)));
-    }
-    const g = this.glassShown(), sel = this.pickTarget;
-    const fmt = { opacity: (v) => v.toFixed(2), chrome: (v) => v.toFixed(2), radius: (v) => `${v}px`, gap: (v) => `${v}px`, margin: (v) => `${v}px`, angle: (v) => `${v}°`, glowIntensity: (v) => `${v}%` };
-    const slider = (k, label) => this.slider(t, this.sliders[k], k, label, fmt[k](g[k]));
-    // A row of color chips; the picker opens under the row for the selected one.
-    const colors = (keys, note) => v_flex().gap(6)
-      .child(h_flex().flex_wrap().gap(6).children(keys.map(([k, label]) => this.chip(t, `gc-${k}`, label, this.glassHex(k), sel === `glass:${k}`, (_e, cx) => this.selectTarget(`glass:${k}`, cx)))))
-      .when(keys.some(([k]) => sel === `glass:${k}`), (el) => el.child(this.colorEditor(t, note)));
-    const bgs = [["theme", "Theme"], ["gradient", "Gradient"], ["bloom", "Bloom"], ["frost", "Frosted wallpaper"], ["image", "Image"]];
-    const body = v_flex().gap(16)
-      .child(this.section("Presets", t, h_flex().gap(6).children(Object.entries(GLASS_PRESETS).map(([n, p]) =>
-        this.pill(`gp-${n}`, n, false, t, (_e, cx) => this.stageGlass({ ...p }, cx))))))
-      .child(this.section("Window background", t, v_flex().gap(10)
-        .child(h_flex().flex_wrap().gap(6).children(bgs.map(([id, label]) => this.pill(`bg-${id}`, label, g.bg === id, t, (_e, cx) => this.stageGlass({ bg: id }, cx)))))
-        .when(g.bg === "gradient", (el) => el.child(colors([["from", "From"], ["to", "To"]], "Clear the hex box to go back to the theme's accent (From) or canvas (To)."))
-          .child(slider("angle", "Gradient angle")))
-        .when(g.bg === "bloom", (el) => el.child(colors([["bloomBase", "Base"], ["glowA", "Glow 1"], ["glowB", "Glow 2"], ["glowC", "Glow 3"]], "Clear the hex box to go back to the theme's color."))
-          .child(slider("glowIntensity", "Glow strength"))
-          .child(div().text_size(11.5).text_color(t.dim).line_height("17px").child("Soft glows behind the glass. Herdr can only paint a flat color, a straight gradient or a picture behind panes, so the Studio renders the glows into a picture (backgrounds/studio-bloom-*.jpg). It's redrawn as you change it and when the theme changes.")))
-        .when(g.bg === "frost", (el) => el.child(h_flex().gap(8).items_center()
-          .child(div().flex_1().text_size(11.5).text_color(t.dim).line_height("17px").child("Your desktop picture, blurred. It shows the wallpaper only, not the windows behind Herdr, and it doesn't move with the window. Rebuilt when the wallpaper changes and you open the Studio."))
-          .child(this.button("frost-now", "Rebuild", t, (_e, cx) => cx.spawn((cx) => this.guard(cx, "Blurring wallpaper", async () => { await this.refreshFrost(cx, true); this.pushGlass(); this.say("Frosted wallpaper rebuilt", "success", cx); }))))))
-        .when(g.bg === "image", (el) => el.child(v_flex().gap(6)
-          .child(h_flex().id("img-drop").gap(6).on_drop((e, cx) => this.useImage(e.paths && e.paths[0], cx))
-            .child(this.button("img-choose", "Choose…", t, (_e, cx) => this.chooseImage(cx), true))
-            .child(Input.new(this.imagePath).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-            .child(this.button("img-set", "Use", t, (_e, cx) => this.useImage(this.imagePath.value().trim(), cx))))
-          .child(div().text_size(11.5).text_color(t.dim).line_height("17px").child("Choose a picture, drop one here, or type a path. Herdr only reads pictures in its own folder, so one from elsewhere is copied into backgrounds/ first."))))))
-      .child(this.section("Glass surfaces", t, v_flex().gap(12)
-        .child(slider("chrome", "Sidebar and bar opacity"))
-        .child(slider("opacity", "Terminal opacity")),
-        "Below 1, the window background shows through. A busy background needs higher opacity to keep text readable. The glass takes the theme's chrome and terminal colors: change those on the Colors tab."))
-      .child(this.section("Pane frames", t, v_flex().gap(12).child(slider("radius", "Corner radius")).child(slider("margin", "Margin around panes")).child(slider("gap", "Gap between panes")),
-        "The margin frames the pane area, even with one pane. The gap shows between split panes and beside the side panel. Their color is on the Colors tab, under Behind panes."))
-      .child(this.section("True window blur", t, div().text_size(11.5).text_color(t.dim).line_height("17px")
-        .child("Seeing the desktop and other windows through Herdr needs a Herdr setting that doesn't exist yet (herdr-app issue #190).")));
-    return { head: v_flex().gap(8).child(this.windowPreview(t)).child(this.applyBar(t)), body };
-  }
-
-  // A pill with a color dot, for picking which color the picker edits.
-  chip(t, id, label, hex, on, onClick) {
-    return h_flex().id(id).gap(6).px(9).h(28).items_center().rounded(7).cursor_pointer().text_size(12.5)
-      .border_1().border_color(on ? t.accent : t.input).bg(on ? t.selected : t.background).hover((st) => st.bg(t.hover))
-      .on_click(onClick)
-      .child(div().size(14).rounded(7).bg(hex).border_1().border_color(t.input))
-      .child(div().child(label));
-  }
-
-  agentsTab(t, s, cx) {
-    if (!this.personal()) {
-      return v_flex().gap(12).p(12).rounded(8).bg(t.raised)
-        .child(div().font_semibold().child("The agents list needs your own copy of this layout"))
-        .child(div().text_color(t.muted).line_height("19px").child(`Herdr's own layouts (${shared("layout")}) can't swap their agents list. A copy can: it shows the Studio's version of the list, a copy of Herdr's with your sizes. The Studio closes for a moment while Herdr switches.`))
-        .child(h_flex().child(this.button("copy", `Make my copy of ${shared("layout")}`, t, (_e, cx) => this.makeCopy(cx, "agents"), true)));
-    }
-    const a = this.agentsShown(), sel = this.pickTarget;
-    const px = (v) => `${v}px`;
-    const preset = Object.entries(AGENT_PRESETS).find(([, p]) => Object.keys(p).every((k) => p[k] === a[k]));
-    const body = v_flex().gap(16)
-      .child(this.section("Density", t, h_flex().flex_wrap().gap(6)
-        .children(Object.keys(AGENT_PRESETS).map((name) => this.pill(`agp-${name}`, name, preset && preset[0] === name, t, (_e, cx) => this.stageAgents({ ...AGENT_PRESETS[name] }, cx)))),
-        "Comfortable is Herdr's own list. Fine-tune with the sliders."))
-      .child(this.section("Row layout", t, h_flex().flex_wrap().gap(6)
-        .children([["one", "One line"], ["two", "Two lines"], ["auto", "Two lines when needed"]].map(([v, label]) => this.pill(`agl-${v}`, label, a.lines === v, t, (_e, cx) => this.stageAgents({ lines: v }, cx)))),
-        "Two lines keep the name on top and put the detail, time and status under it. \"When needed\" does that only for a name too long to sit beside them, so it follows the sidebar's width."))
-      .child(this.section("Row title", t, h_flex().flex_wrap().gap(6)
-        .children([["space", "Workspace"], ["session", "Session"]].map(([v, label]) => this.pill(`agd-${v}`, label, a.lead === v, t, (_e, cx) => this.stageAgents({ lead: v }, cx)))),
-        "What leads a row when it names both: the workspace or the session's title. Under a workspace's own header a row shows only the session."))
-      .child(this.section("Cards", t, v_flex().gap(12)
-        .child(h_flex().flex_wrap().gap(6).children(AGENT_COLORS.map(([k, label]) => this.chip(t, `agc-${k}`, label, this.agentHex(k, a), sel === `agent:${k}`, (_e, cx) => this.selectTarget(`agent:${k}`, cx)))))
-        .when(AGENT_COLORS.some(([k]) => sel === `agent:${k}`), (el) => el.child(this.colorEditor(t, "Clear the hex box to go back to the theme's color. Card and Border are off until you pick one.")))
-        .child(h_flex().flex_wrap().gap(6).items_center().child(div().w(84).text_size(12).text_color(t.muted).child("Status"))
-          .children([["left", "Left"], ["right", "Right"]].map(([v, label]) => this.pill(`ags-${v}`, label, a.statusSide === v, t, (_e, cx) => this.stageAgents({ statusSide: v }, cx)))))
-        .child(h_flex().flex_wrap().gap(6).items_center().child(div().w(84).text_size(12).text_color(t.muted).child("Name weight"))
-          .children([["normal", "Regular"], ["medium", "Medium"], ["semibold", "Semibold"], ["bold", "Bold"]].map(([v, label]) => this.pill(`agw-${v}`, label, a.weight === v, t, (_e, cx) => this.stageAgents({ weight: v }, cx)))))
-        .child(this.slider(t, this.agentSliders.radius, "ag-radius", "Corner radius", px(a.radius)))
-        .child(this.slider(t, this.agentSliders.pad, "ag-pad", "Side padding", px(a.pad)))
-        .child(this.slider(t, this.agentSliders.space, "ag-space", "Space between cards", px(a.space))),
-        "A color you pick stays when you change themes; the ones left unset follow the theme. Pick a Card color, a Border or some space between cards to make each agent its own card. Status on the left is the small form (spinner, dot, !), in front of the icon."))
-      .child(this.section("Sizes", t, v_flex().gap(12)
-        .child(this.slider(t, this.agentSliders.row, "ag-row", "Row height", px(a.row)))
-        .child(this.slider(t, this.agentSliders.text, "ag-text", "Agent name text", px(a.text)))
-        .child(this.slider(t, this.agentSliders.icon, "ag-icon", "Icon size", px(a.icon)))
-        .child(this.slider(t, this.agentSliders.header, "ag-header", "Group header height", px(a.header)))))
-      .child(this.section("Text sizes", t, v_flex().gap(12)
-        .child(this.slider(t, this.agentSliders.headerText, "ag-headerText", "Group headers", px(a.headerText)))
-        .child(this.slider(t, this.agentSliders.timeText, "ag-timeText", "Time since", px(a.timeText)))
-        .child(this.slider(t, this.agentSliders.detailText, "ag-detailText", "Second line detail (two-line rows)", px(a.detailText)))
-        .child(this.slider(t, this.agentSliders.titleText, "ag-titleText", "\"Agents\" title", px(a.titleText)))
-        .child(this.slider(t, this.agentSliders.badgeText, "ag-badgeText", "\"Needs you\" badge", px(a.badgeText)))))
-      .child(this.section("Show", t, v_flex().gap(8)
-        .child(this.checkbox("ag-time", "Time since (3m, 12m)", a.time, t, (_e, cx) => this.stageAgents({ time: !a.time }, cx)))
-        .child(this.checkbox("ag-headers", "Group headers (Working, Pinned, …)", a.headers, t, (_e, cx) => this.stageAgents({ headers: !a.headers }, cx)))
-        .child(this.checkbox("ag-icons", "Agent icons", a.icons, t, (_e, cx) => this.stageAgents({ icons: !a.icons }, cx)))
-        .child(this.checkbox("ag-badge", "\"Needs you\" badge (off: a small !)", a.badge, t, (_e, cx) => this.stageAgents({ badge: !a.badge }, cx))),
-        "Your layout copy shows the Studio's copy of Herdr's agents list once anything here differs from Herdr's. It's rebuilt from Herdr's list on each Save, so Herdr's updates still reach it."));
-    return { head: v_flex().gap(8).child(this.agentsPreview(t, a)).child(this.applyBar(t)), body };
-  }
-
-  // A mock of the sidebar's agents list with the staged sizes.
+  // The sidebar's agents list with the staged sizes, as it sits in the preview's sidebar.
   agentsPreview(t, a) {
     const rows = [["herdr-app-theming", "3m", "working", "Herdr theming plugin design"], ["agent-tools-private", "12m", "blocked", "ah2-fix: implementor"], ["notes", "1h", "idle", ""]];
-    // The same rule as the clone's "auto", for this 240px mock.
-    const two = (name, more) => a.lines === "two" || (a.lines === "auto" && (name.length + (more ? more.length + 3 : 0)) * a.text * 0.56 > 240 - 32 - (a.icons ? a.icon + 9 : 0) - (a.time ? 30 : 0) - 24);
+    // The same rule as the clone's "auto", for the preview's 194px list.
+    const two = (name, more) => a.lines === "two" || (a.lines === "auto" && (name.length + (more ? more.length + 3 : 0)) * a.text * 0.56 > 194 - 16 - (a.icons ? a.icon + 9 : 0) - (a.time ? 30 : 0) - 24);
     const status = (st, compact = !a.badge) => st === "working" ? div().size(10).flex_none().rounded(5).border_2().border_color(t.working)
       : st === "blocked" ? (!compact ? div().flex_none().px(6).h(a.badgeText + 7.5).rounded(5).bg(t.blocked + "26").text_size(a.badgeText).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you")
         : div().size(a.badgeText + 3.5).flex_none().rounded(4).bg(t.blocked + "26").text_size(a.badgeText).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!"))
@@ -1399,7 +1664,7 @@ export default class ThemeStudio extends View {
     };
     const header = (label, n) => h_flex().px(8).pt(a.header < 26 ? 4 : 8).h(a.header).flex_none().gap(6).items_center().text_size(a.headerText).font_medium().text_color(t.dim)
       .child(label).child(div().text_color(t.dim).child(String(n)));
-    return v_flex().w(240).p(8).rounded(8).bg(t.chrome).border_1().border_color(t.border).self_center()
+    return v_flex().w_full()
       .child(div().px(8).pt(2).pb(4).text_size(a.titleText).font_medium().text_color(t.dim).child("Agents"))
       .when(a.headers, (el) => el.child(header("Working", 2)))
       .child(v_flex().gap(a.space).child(row(rows[0], 0)).child(row(rows[1], 1)))
@@ -1407,103 +1672,88 @@ export default class ThemeStudio extends View {
       .child(row(rows[2], 2));
   }
 
-  // A small mock window drawn from the staged theme colors and glass: backdrop, sidebar and tab bar,
-  // two pane cards over the behind-panes color.
-  windowPreview(t) {
-    const c = { ...t, ...this.themeColors() }, g = this.glassShown(), base = this.baseColors(g, c);
-    const behind = g.behind ? this.glassHex("behind", g, c) : null;
-    const see = g.opacity < 1;
-    const chrome = withAlpha(base.chrome, g.chrome), term = see ? withAlpha(base.background, g.opacity) : c.background;
-    // ponytail: the gradient snaps to the nearest of four directions; Herdr draws the exact angle.
-    const a = ((g.angle % 360) + 360) % 360, across = (a > 45 && a < 135) || (a > 225 && a < 315);
-    const flip = across ? a > 180 : !(a >= 135 && a <= 225);
-    const from = this.glassHex("from", g, c), to = this.glassHex("to", g, c);
-    const bands = Array.from({ length: 16 }, (_, i) => div().flex_1().bg(withAlpha(from, flip ? i / 15 : 1 - i / 15)));
-    const path = g.bg === "frost" ? g.frost : g.bg === "image" ? g.image : g.bg === "bloom" ? g.bloom : "";
-    const backdrop = g.bg === "gradient" ? (across ? h_flex() : v_flex()).size_full().bg(to).children(bands)
-      : path ? image(path).size_full() : div().size_full().bg(g.bg === "bloom" ? this.glassHex("bloomBase", g, c) : c.canvas);
-    const bar = (w, col) => div().w(w).h(5).rounded(3).bg(col);
-    const font = settings().font_family;
-    const line = (parts) => h_flex().gap(5).children(parts.map(([text, col]) => div().text_color(col).child(text)));
-    const card = (title, lines, tail) => v_flex().flex_1().h_full().min_w(0).rounded(g.radius).overflow_hidden().bg(term)
-      .child(div().h(16).px(6).flex().items_center().text_size(9).text_color(c.muted).border_b_1().border_color(c.border).child(title))
-      .child(v_flex().p(6).gap(1).font_family(font).text_size(9.5).line_height("13px").children(lines.map((l, i) => i === lines.length - 1 && tail ? line(l).child(tail) : line(l))));
-    return div().relative().h(170).w_full().rounded(8).overflow_hidden().border_1().border_color(t.border).bg(c.canvas)
-      .child(div().absolute().inset_0().child(backdrop))
-      .child(h_flex().absolute().inset_0()
-        .child(v_flex().w(72).h_full().bg(chrome).border_r_1().border_color(c.border).p(8).gap(7)
-          .child(bar(30, c.foreground)).child(bar(46, c.muted)).child(bar(38, c.muted)).child(bar(42, c.dim)))
-        .child(v_flex().flex_1().h_full().min_w(0)
-          .child(h_flex().h(20).px(8).gap(6).items_center().bg(chrome).border_b_1().border_color(c.border)
-            .child(div().w(34).h(12).rounded(4).bg(c.selected)).child(div().w(28).h(12).rounded(4).bg(c.hover)))
-          .child(h_flex().flex_1().min_h(0).p(g.margin).gap(g.gap).when(!!behind, (el) => el.bg(behind))
-            .child(card("zsh", [[["~/app", c.ansi4], ["main", c.ansi5]], [["$ npm test", c.terminal_foreground || c.foreground]], [["✓ 42 passed", c.ansi2]]]))
-            .child(card("claude", [[["● Reading lib.js", c.ansi3]], [["  edits ready", c.muted]], [["❯", c.accent]]], this.cursorMark(c))))));
-  }
-
-  // The terminal cursor in the mock window, in its staged shape and color (blink isn't shown).
-  cursorMark(c) {
-    const col = c.cursor || c.foreground, shape = this.cursorShown().shape;
-    return h_flex().h(13).items_center()
-      .child(shape === "bar" ? div().w(1.5).h(12).bg(col) : shape === "underline" ? div().w(6).h(12).flex().items_end().child(div().w_full().h(1.5).bg(col)) : div().w(6).h(12).bg(col));
-  }
-
-  // The picker for the selected color: swatch, hue/saturation/lightness/alpha strips, hex box, and
-  // Reset when `reset` is given. Each strip shows what its slider would give.
-  colorEditor(t, note, reset) {
-    const P = this.pick;
-    const strips = [
-      ["H", (k) => hslaToHex(k * 359, 100, 50)],
-      ["S", (k) => hslaToHex(P[0], k * 100, P[2])],
-      ["L", (k) => hslaToHex(P[0], P[1], k * 100)],
-      ["A", (k) => hslaToHex(P[0], P[1], P[2], k * 100)],
-    ];
-    const row = ([label, fn], i) => h_flex().gap(8).items_center()
-      .child(div().w(12).text_size(11).text_color(t.dim).child(label))
-      // The strip sits under the slider: the indicator draws only the fill and the thumb.
-      .child(div().relative().flex_1()
-        .child(h_flex().absolute().top(5).left(0).w_full().h(10).rounded(5).bg(t.background)
-          // overflow_hidden doesn't clip to the radius, so the end bands round themselves.
-          .children(Array.from({ length: 48 }, (_, j) => div().flex_1().h_full().bg(fn(j / 47)).when(j === 0, (el) => el.rounded_l(5)).when(j === 47, (el) => el.rounded_r(5)))))
-        .child(Slider.new(this.pickers[i]).child(SliderTrack.new(this.pickers[i]).flex().items_center().h(20).w_full().cursor_pointer()
-        .child(SliderIndicator.new(this.pickers[i]).relative().w_full().h(10)
-          .range_style((f) => f)
-          // 24x16 pill on a 10px strip: pulled back half its width and 3px up.
-          .child(SliderThumb.new(this.pickers[i]).id(`pick-${label}`).w(24).h(16).rounded(8).bg(t.foreground).border_2().border_color(t.background).ml(-12).mt(-3))))))
-      .child(div().w(26).ml(6).text_size(11).text_color(t.muted).text_right().child(String(P[i])));
-    return v_flex().gap(8).mt(4).mb(6).p(10).rounded(8).bg(t.raised)
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .child(h_flex().gap(10).items_center()
-        .child(div().size(56).rounded(8).border_1().border_color(t.input).bg(hslaToHex(...P)))
-        .child(v_flex().flex_1().gap(2).children(strips.map(row))))
-      .child(h_flex().gap(6).items_center()
-        .child(Input.new(this.hex).flex_1().h(30).px(8).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-        .child(this.button("hex-set", "Set", t, (_e, cx) => this.stageHex(this.hex.value(), cx), true))
-        .when(!!reset, (el) => el.child(this.button("hex-reset", "Reset", t, (_e, cx) => reset(cx)))))
-      .when(!!note, (el) => el.child(div().text_size(11.5).text_color(t.dim).line_height("17px").child(note)));
-  }
-
   // --- parts -----------------------------------------------------------------
-  section(label, t, content, note) {
-    return v_flex().gap(8)
-      .child(div().text_size(11).font_semibold().text_color(t.muted).child(label.toUpperCase()))
-      .child(content)
-      .when(!!note, (el) => el.child(div().text_size(11.5).text_color(t.dim).line_height("17px").child(note)));
+  // A section: its title, an ⓘ whose tooltip holds the explanation, the controls, and at most one
+  // short line under them for what you'd otherwise miss. `fold` makes it open and close.
+  section(label, t, content, tip, o = {}) {
+    const closed = !!o.fold && !this.open[o.fold];
+    return v_flex().gap(10)
+      .child(h_flex().id(`sec-${label}`).h(16).gap(6).items_center()
+        .when(!!o.fold, (el) => el.cursor_pointer().on_click((_e, cx) => { this.open[o.fold] = closed; cx.notify(); })
+          .child(div().w(10).text_size(10).text_color(t.dim).child(closed ? "▸" : "▾")))
+        .child(div().text_size(10.5).font_semibold().text_color(t.dim).child(label.toUpperCase()))
+        .when(closed && !!o.count, (el) => el.child(div().text_size(10.5).text_color(t.dim).child(`· ${o.count}`)))
+        .when(!!tip, (el) => el.child(div().id(`tip-${label}`).size(16).flex().items_center().justify_center().tooltip(tip)
+          .child(svg(`${ICONS}/info.svg`).size(13).text_color(t.dim)))))
+      .when(!closed, (el) => el.child(content))
+      .when(!closed && !!o.hint, (el) => el.child(typeof o.hint === "string" ? div().text_size(11.5).text_color(t.dim).line_height("16px").child(o.hint) : o.hint));
   }
 
-  pill(id, label, active, t, onClick) {
-    return div().id(id).px(10).py(4).rounded(7).cursor_pointer().text_size(12.5)
-      .border_1().border_color(active ? t.accent : t.border)
-      .bg(active ? t.accent : "#00000000").text_color(active ? t.accent_foreground : t.foreground)
-      .hover((st) => st.bg(active ? t.accent : t.hover))
-      .on_click(onClick).child(label);
+  // An inspector row: label, control, and the value when there is one.
+  row(t, label, control, value) {
+    return h_flex().min_h(32).gap(10).items_center()
+      .child(div().w(112).flex_none().truncate().text_size(12.5).text_color(t.muted).child(label))
+      .child(h_flex().flex_1().min_w(0).items_center().child(control))
+      .when(value != null, (el) => el.child(div().w(44).flex_none().text_right().text_size(11.5).text_color(t.muted).child(value)));
   }
 
+  slider(t, state, id, label, value) {
+    return this.row(t, label, div().flex_1().min_w(0).child(Slider.new(state).child(SliderTrack.new(state).flex().items_center().h(20).w_full().cursor_pointer()
+      .child(SliderIndicator.new(state).relative().w_full().h(4).rounded(2).bg(t.input)
+        .range_style((f) => f.rounded(2).bg(t.accent))
+        // A 14px dot; the shell places its top-left at the groove's top, so it's pulled back by half its size less the 4px groove.
+        .child(SliderThumb.new(state).id(`thumb-${id}`).size(14).rounded(7).bg(t.foreground).border_2().border_color(t.accent).ml(-7).mt(-5))))), value);
+  }
+
+  // One of several: a joined control. `fill` stretches it across the row.
+  seg(id, opts, value, t, onPick, fill = false) {
+    return h_flex().p(2).gap(2).rounded(9).border_1().border_color(t.border).bg(t.canvas).min_w(0).when(fill, (el) => el.flex_1())
+      .children(opts.map(([v, label]) => {
+        const on = String(v) === String(value);
+        return div().id(`${id}-${v}`).h(24).px(10).rounded(7).flex().items_center().justify_center().cursor_pointer().when(fill, (el) => el.flex_1())
+          .border_1().border_color(on ? t.input : "#00000000").when(on, (el) => el.bg(t.raised).shadow_sm())
+          .text_size(12).font_medium().text_color(on ? t.foreground : t.muted).hover((st) => st.text_color(t.foreground))
+          .on_click((_e, cx) => onPick(v, cx))
+          .child(label);
+      }));
+  }
+
+  toggle(id, on, t, onClick) {
+    return h_flex().id(id).w(30).h(18).flex_none().px(2).rounded(9).items_center().cursor_pointer().bg(on ? t.accent : t.input).when(on, (el) => el.justify_end())
+      .on_click(onClick)
+      .child(div().size(14).rounded(7).bg(on ? "#ffffff" : t.foreground));
+  }
+
+  // A pill with a color dot, for picking which color the picker edits; no hex, no dot.
+  chip(t, id, label, hex, on, onClick) {
+    return h_flex().id(id).gap(7).pl(hex ? 6 : 10).pr(10).h(28).items_center().rounded(8).cursor_pointer().text_size(12)
+      .border_1().border_color(on ? t.accent : t.border).bg(on ? t.selected : t.raised).hover((st) => st.border_color(on ? t.accent : t.input))
+      .on_click(onClick)
+      .when(!!hex, (el) => el.child(div().size(16).rounded(5).bg(hex).border_1().border_color(t.input)))
+      .child(div().child(label));
+  }
+
+  link(id, label, t, onClick) {
+    return div().id(id).text_size(11.5).text_color(t.accent).cursor_pointer().hover((st) => st.opacity(0.8)).on_click(onClick).child(label);
+  }
+
+  iconButton(id, icon, tip, t, onClick, on = false, off = false) {
+    return div().id(id).size(30).flex_none().rounded(8).flex().items_center().justify_center()
+      .when(off, (el) => el.opacity(0.35)).when(!off, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
+      .when(on, (el) => el.bg(t.hover))
+      .tooltip(tip)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click(onClick)
+      .child(svg(`${ICONS}/${icon}.svg`).size(16).text_color(t.muted));
+  }
+
+  // `primary` true is the accent button; "ghost" has no border.
   button(id, label, t, onClick, primary = false) {
-    return div().id(id).px(10).py(5).rounded(7).cursor_pointer().text_size(12.5).font_medium()
-      .when(primary, (el) => el.bg(t.solid).text_color(t.solid_foreground))
-      .when(!primary, (el) => el.border_1().border_color(t.input).text_color(t.foreground))
-      .hover((st) => st.opacity(0.85))
+    return div().id(id).h(30).px(12).flex().items_center().rounded(8).cursor_pointer().text_size(12.5).font_medium()
+      .when(primary === true, (el) => el.bg(t.accent).text_color(t.accent_foreground))
+      .when(primary === "ghost", (el) => el.text_color(t.muted).hover((st) => st.bg(t.hover).text_color(t.foreground)))
+      .when(!primary, (el) => el.border_1().border_color(t.input).bg(t.raised).text_color(t.foreground).hover((st) => st.bg(t.hover)))
+      .when(primary === true, (el) => el.hover((st) => st.opacity(0.88)))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click(onClick).child(label);
   }

@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -233,3 +233,24 @@ assert.equal(withAgentsMod(withAgentsMod(agTree, true), false).children[0].child
 assert.equal(agTree.children[0].children[0].content.mod, "agents", "the input tree is left alone");
 console.log("lib.test: agents patch passed");
 
+
+// Auto-hide: on folds the sidebar to the rail and adds one watcher; off unfolds it and keeps other floating blocks.
+const ahTree = { id: "root", children: [{ id: "sidebar", hidden: true, size: { px: 240 }, children: [] }, { id: "work" }], floating: [{ id: "board" }] };
+const ahOn = withAutoHide(withAutoHide(ahTree, true, 76, 240), true, 76, 240);
+assert.deepEqual(ahOn.children[0].size, { px: 76 });
+assert.equal(ahOn.children[0].hidden, undefined, "folded, never hidden");
+assert.deepEqual(ahOn.floating.map((f) => f.id), ["board", EDGE_ID], "one watcher, even when turned on twice");
+const ahOff = withAutoHide(ahOn, false, 76, 240);
+assert.deepEqual(ahOff.children[0].size, { px: 240 });
+assert.deepEqual(ahOff.floating.map((f) => f.id), ["board"]);
+assert.equal(withAutoHide({ id: "root", children: [{ id: "sidebar" }] }, false, 76, 240).floating, undefined);
+assert.equal(withAutoHide({ id: "root", children: [] }, true, 76, 240), null, "no sidebar, nothing to fold");
+assert.equal(ahTree.children[0].hidden, true, "the input tree is left alone");
+assert.equal(autoHideMode(ahOn), "rail");
+assert.equal(autoHideMode(ahOff), null);
+const ahGone = withAutoHide(ahOn, true, 76, 240, "hidden");
+assert.equal(ahGone.children[0].hidden, true);
+assert.deepEqual(ahGone.children[0].size, { px: 240 }, "hidden keeps its open width");
+assert.equal(autoHideMode(ahGone), "hidden");
+assert.equal(ahGone.floating.length, 2, "switching mode keeps one watcher");
+console.log("lib.test: auto-hide passed");
