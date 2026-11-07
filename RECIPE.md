@@ -1,12 +1,10 @@
 # Theme Studio
 
-One floating window for the Herdr app's whole look: pick or import a theme, edit any of its
-color tokens, choose terminal and panel fonts, and give the window glass: a gradient, image or
-blurred-wallpaper background showing through translucent terminals and sidebars, with
-rounded pane cards whose corners stay clean. Every change lands in the real window within a
-second or two once saved, and a big preview shows them before that. Undo all puts back how
-things were before the Studio's first change. A Settings page holds what isn't a theme's: an
-auto-hiding sidebar and the palette icon.
+One window for the Herdr app's whole look. Pick or import a theme, edit any of its colors,
+choose terminal and panel fonts, style the agents list, and give the window glass: a gradient,
+Bloom glow, picture or blurred wallpaper showing through translucent terminals and sidebars,
+on rounded pane cards. A big live preview shows every change before you Save. Settings adds an
+auto-hiding sidebar that folds to a slim rail, and Undo all puts everything back.
 
 ![Theme Studio](preview.png)
 
