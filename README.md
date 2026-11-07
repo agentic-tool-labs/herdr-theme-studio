@@ -56,11 +56,11 @@ that folder and stay. Close and reopen the Studio afterwards.
 
 Every view has the same shape: a big preview of the whole window on the left, the controls on the
 right, and one bar along the bottom that says what's going on and holds the buttons that act on it.
-The screenshots are of for-ghost, a custom theme with a Bloom background.
+The screenshots are of for-ghost-green, a custom theme with a green Bloom background.
 
 ### The theme library
 
-![The theme library, previewing Tokyo Night](docs/screenshots/manager.png)
+![The theme library, with for-ghost-green in use](docs/screenshots/manager.png)
 
 This is what opens. Click a theme to preview it on the left; nothing changes in the real window
 until **Use it**. Search by name, filter to Dark or Light, and the sections run Your themes,
@@ -183,7 +183,7 @@ Studio says so and keeps Herdr's.
 
 ### Settings
 
-![Settings, with the sidebar on auto-hide](docs/screenshots/settings.png)
+![The Settings page](docs/screenshots/settings.png)
 
 The gear in the library. These belong to you, not a theme, so changing themes keeps them, and
 they apply at once.
