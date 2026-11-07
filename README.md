@@ -3,8 +3,8 @@
 <h1 align="center">Herdr Desktop: Theme Studio</h1>
 
 One window for the [Herdr](https://herdr.dev) app's whole look: themes, every color token,
-fonts, glass and pane frames. Changes show in the real window as you make them, because the
-Studio edits the files Herdr already redraws from. [RECIPE.md](RECIPE.md) is the brief to
+fonts, glass, pane frames, the agents list and an auto-hiding sidebar. A big live preview shows
+every change before you keep it, and Save writes the files Herdr already redraws from. [RECIPE.md](RECIPE.md) is the brief to
 build it from scratch.
 
 ## Install
@@ -48,65 +48,75 @@ that folder and stay. Close and reopen the Studio afterwards.
 - **The palette icon beside Settings** in the sidebar footer. Herdr's Settings screen can't take
   extra sections (Herdr rewrites it on every start), and its sidebar mod and built-in layouts can't
   be edited. So the Studio makes your own copy of the layout (`<layout>-studio`) and a patched
-  clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. The theme
-  manager's Palette icon section adds or removes it, as does `button=on|off`; on Herdr's own layout
+  clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. The Studio's
+  [Settings](#settings) page adds or removes it, as does `button=on|off`; on Herdr's own layout
   `button=on` makes your copy first. On the narrow sidebar rail it gets its own row under Settings.
 
 ## A tour
 
-The screenshots below are of a copy of Tokyo Night, edited step by step.
+Every view has the same shape: a big preview of the whole window on the left, the controls on the
+right, and one bar along the bottom that says what's going on and holds the buttons that act on it.
+The screenshots are of for-ghost, a custom theme with a Bloom background.
 
-### The theme manager
+### The theme library
 
-![The theme manager, previewing Tokyo Night](docs/screenshots/manager.png)
+![The theme library, previewing Tokyo Night](docs/screenshots/manager.png)
 
-This is what opens. Click a theme card to preview it in the mock window at the top; nothing
-changes in the real window until **Apply**. Under the preview are the actions for the picked theme:
+This is what opens. Click a theme to preview it on the left; nothing changes in the real window
+until **Use it**. Search by name, filter to Dark or Light, and the sections run Your themes,
+Herdr's and others, then the 12 bundled presets (`presets/`, sources in `presets/SOURCES.md`).
+The bar along the bottom acts on the theme you picked:
 
-- **Edit** opens the editor (your own themes only).
-- **Copy** makes your own copy under a new name. On a locked theme the button reads **Copy to edit**.
-- **Copy JSON** puts the theme on the clipboard in Herdr's format, for sharing.
-- **Delete** removes one of yours, when it's not in use.
-
-Your themes come first. Herdr's own themes and the 12 bundled presets (`presets/`, sources in
-`presets/SOURCES.md`) are locked: you copy one to change it, so the original stays as it was.
-Applying a preset copies it into `themes/`, so Herdr's Settings lists it too.
+- **Use it** makes it the theme in use. Using a preset copies it into `themes/`, so Herdr's
+  Settings lists it too. **Cancel** drops the preview.
+- **Edit** opens the editor. On one of Herdr's themes or a preset it reads **Edit a copy**: you
+  edit it straight away, and the first Save keeps your changes as `<name>-custom` (numbered if
+  that's taken), so the original stays as it was.
+- **⋯** has **Duplicate…** (your own copy under a name you type), **Copy JSON** (the theme in
+  Herdr's format, for sharing) and **Delete…** (yours, when it's not in use).
 
 **A theme holds everything.** Its colors live in `themes/<name>.json`. Once you save it in the editor,
 it also keeps its type, glass, cursor and agents-list settings, in shared state beside it.
-Applying the theme brings all of that back. A theme that has only colors (Herdr's, a preset, a fresh
+Using the theme brings all of that back. A theme that has only colors (Herdr's, a preset, a fresh
 import) leaves your type, glass and agents list as they are, and resets glass colors you set
 by hex to the theme's own. Picking a dark theme sets dark mode's theme, and a light one sets light mode's.
 
-The **Palette icon beside Settings** section at the bottom adds or removes the sidebar icon.
-**Revert** (bottom right, after the first change) restores `settings.json`, the layout and the
-theme picks from the snapshot taken before the Studio's first write. Themes and layout copies it
-made stay on disk.
+The **⋯** at the top right has **Import a theme…**, **Show the themes folder** and **Undo all Theme
+Studio changes…**, which restores `settings.json`, the layout and the theme picks from the snapshot
+taken before the Studio's first write. Themes and layout copies it made stay on disk. The gear
+opens [Settings](#settings).
 
 ### Importing
 
-![The import view](docs/screenshots/import.png)
+![The import panel](docs/screenshots/import.png)
 
-**Import** (top right of the manager) takes iTerm2 (`.itermcolors`, binary or XML), Ghostty,
+**Import** (beside the filter) takes iTerm2 (`.itermcolors`, binary or XML), Ghostty,
 kitty, Alacritty (TOML) or Herdr JSON. You can paste the text, press **From clipboard** (a file copied in
 Finder works too) or drop the file on the box. Any `.itermcolors` files in Downloads and on the Desktop are
-listed at the top for one click. An imported theme joins Your themes, and nothing changes until you
-apply it. The first time, macOS asks whether Herdr may read Downloads or the Desktop. That prompt can
+listed under it for one click. An imported theme joins Your themes, and nothing changes until you
+use it. The first time, macOS asks whether Herdr may read Downloads or the Desktop. That prompt can
 hide behind other windows, and until you answer it the import seems to do nothing.
 
 ### The editor
 
-**Edit** makes the theme the one in use, so the real window follows along, and opens four tabs.
-A mock window at the top of each tab shows changes as you make them. Nothing is kept until
-**Save**. **Discard** drops the changes, and **← Themes** asks first when there are unsaved changes.
+**Edit** makes the theme the one in use and opens four tabs: Colors, Type, Glass and Agents. A
+tab with unsaved changes has a dot. The preview shows every change as you make it, and nothing is
+kept until **Save**. The bar along the bottom counts the changes and names their tabs; **Discard**
+drops them, and the back arrow asks first when there are any.
 
 #### Colors
 
 ![Colors tab, with the picker open on the cursor color](docs/screenshots/colors.png)
 
+Click any color and its picker opens pinned at the top of the tab: a swatch, the hex, H, S, L and
+A strips, a contrast badge for text colors, and ↺. ↺ undoes an unsaved change to that color; with
+none, a color Herdr works out from the terminal colors goes back to that. Terminal colors (the
+background, text, selection, cursor and the 16 ANSI colors) have nothing to go back to past their
+saved value, so their ↺ is dimmed until you change them.
+
 | Option | What it changes |
 |---|---|
-| Every theme token: Surfaces, Lines, Text, Accent, Agent status, Terminal ANSI | The token everywhere Herdr uses it. Text tokens show a WCAG contrast badge against their background. Click a token to edit it with the picker (hue, saturation, lightness, alpha, or a hex). Saved to `themes/<name>.json`. |
+| Every theme token: Surfaces, Lines, Text, Accent, Agent status, Terminal ANSI | The token everywhere Herdr uses it. Saved to `themes/<name>.json`. |
 | Behind panes | The color in the gaps and margin around the panes, as a theme token or a hex. It goes on the layout. |
 | Cursor: Block, Underline, Bar; Blink; Color | The terminal cursor. The color is a theme token. Shape and blink go to every open pane. For new panes, add the line from **Copy line** to `~/.zshrc` once (see [Cursor shape](#cursor-shape)). |
 
@@ -117,12 +127,12 @@ A mock window at the top of each tab shows changes as you make them. Nothing is 
 | Option | What it changes |
 |---|---|
 | Terminal font and size | `font` and `font_size` in `settings.json`. The menu draws each font in its own face. |
-| Use ligatures | `font_ligatures`: `!=` and `=>` join into single glyphs. |
-| Panels font | `ui_font`: the sidebar, tab bar and Herdr's panels. Their size follows Herdr's zoom (⌘+ / ⌘−). |
-| Minimum contrast: 1, 1.6, 3, 4.5, 7 | `minimum_contrast`: lifts terminal text that's too faint for its background. 1 leaves programs' colors alone. |
-| Open fonts folder | Herdr loads `.ttf` and `.otf` files from that folder without installing them system-wide. |
+| Ligatures | `font_ligatures`: `!=` and `=>` join into single glyphs. |
+| Panels | `ui_font`: the sidebar, tab bar and Herdr's panels (the preview's too). Their size follows Herdr's zoom (⌘+ / ⌘−). |
+| Lift faint text: Off, 1.6, 3, 4.5, 7 | `minimum_contrast`: lifts terminal text that's too faint for its background. Off leaves programs' colors alone. |
+| Open it (the fonts folder) | Herdr loads `.ttf` and `.otf` files from that folder without installing them system-wide. |
 
-The sample terminal shows each pick at once. Herdr rereads `settings.json` only every few seconds
+The sample terminal under the preview shows each pick at once. Herdr rereads `settings.json` only every few seconds
 (up to about 10), so on your own layout copy the Studio also puts fonts and size on the layout for
 15 s, and the window changes right away.
 
@@ -132,14 +142,14 @@ The sample terminal shows each pick at once. Herdr rereads `settings.json` only 
 
 | Option | What it changes |
 |---|---|
-| Presets: Solid, Tinted, Frosted | Starting points that set everything below at once. |
-| Window background: Theme, Gradient, Bloom, Frosted wallpaper, Image | What shows behind the panes. **Gradient** uses two colors you pick and an angle. **Bloom** uses a base color with three soft glows, plus a glow strength. **Frosted wallpaper** is your desktop picture, blurred. **Image**: **Choose…** opens the macOS file picker, or you can drop a picture or type a path. A picture from outside Herdr's folder is copied into `backgrounds/`. |
-| Sidebar and bar opacity | How much of the background shows through the sidebar and tab bar. They keep the theme's chrome color. |
-| Terminal opacity | How much shows through the terminals. They keep the theme's background color. |
-| Corner radius, Margin around panes, Gap between panes | The pane cards' shape and spacing. |
+| Start from: Solid, Tinted, Frosted | Starting points that set everything below at once. |
+| Window background: Theme, Gradient, Bloom, Wallpaper, Image | What shows behind the panes. **Gradient** uses two colors you pick and an angle. **Bloom** uses a base color with three soft glows, plus a glow strength; the preview follows a drag while the picture renders. **Wallpaper** is your desktop picture, blurred. **Image**: **Choose…** opens the macOS file picker, or you can drop a picture or type a path. A picture from outside Herdr's folder is copied into `backgrounds/`. |
+| Sidebar and bar | How much of the background shows through the sidebar and tab bar. They keep the theme's chrome color. |
+| Terminal | How much shows through the terminals. They keep the theme's background color. |
+| Corner radius, Margin, Gap | The pane cards' shape and spacing. |
 
-Herdr's own layouts refuse these fields, so the first time, the tab makes your own copy of the
-layout (`<layout>-studio`). The same panes, before and after:
+Herdr's own layouts refuse these fields, so on one of them the tab offers **Make my copy of <layout>**, your
+own copy of the layout (`<layout>-studio`). The same panes, before and after:
 
 | Solid (Tokyo Night as Herdr draws it) | Bloom, terminals at 0.72, sidebar at 0.6, radius 12 |
 |---|---|
@@ -157,19 +167,37 @@ no icons (right):
 | Option | What it changes |
 |---|---|
 | Density: Comfortable, Compact, Dense | Row and header heights, the icon size and every text size at once. Comfortable is Herdr's own. |
-| Row layout: One line, Two lines, Two lines when needed | Two lines put the name on top and the detail, time and status under it. "When needed" does that only for a name that wouldn't fit, so it follows the sidebar's width. |
-| Row title: Workspace, Session | Which name leads a row that names both (when grouped by status, or pinned): the workspace, or the session's title. |
+| Rows: One line, Two lines, Auto | Two lines put the name on top and the detail, time and status under it. Auto does that only for a name that wouldn't fit, so it follows the sidebar's width. |
+| Title: Workspace, Session | Which name leads a row that names both (when grouped by status, or pinned): the workspace, or the session's title. |
 | Cards: Name, Detail, Time, Card, Border, Selected, Hover colors | Each part's color. An unset color follows the theme; Card and Border are off until you pick one. |
 | Status: Left, Right | Where the spinner, dot or "Needs you" badge sits. On the left it's the small form, before the icon. |
 | Name weight | Regular, Medium, Semibold or Bold. |
-| Corner radius, Side padding, Space between cards | The cards' shape and spacing. |
-| Sizes, Text sizes | Row height, icon size, group header height; the text of agent names, group headers, the time since, the second line, the "Agents" title and the badge. The font stays the UI font. |
+| Corner radius, Side padding, Spacing | The cards' shape and spacing. |
+| Sizes, Other text (folded) | Row height, icon size, group header height; the text of agent names, group headers, the time since, the second line, the "Agents" title and the badge. The font stays the UI font. |
 | Show | The time since, group headers (Working, Pinned, …), agent icons, and the "Needs you" badge (off: a small !). |
 
 Herdr's agents mod can't be edited. So once anything here differs from Herdr's look, your layout copy
 shows `mods/agents-studio` instead: a copy of Herdr's list, rebuilt from Herdr's current one on each
 Save, that reads these settings live. If a Herdr update changes the list too much to adjust, the
 Studio says so and keeps Herdr's.
+
+### Settings
+
+![Settings, with the sidebar on auto-hide](docs/screenshots/settings.png)
+
+The gear in the library. These belong to you, not a theme, so changing themes keeps them, and
+they apply at once.
+
+| Option | What it does |
+|---|---|
+| Auto-hide | Keeps the sidebar out of the way until you need it. Rest the pointer on it and it opens, the terminals making room; move well past it and it folds back a moment later. A sidebar you open with Herdr's own fold button stays open, and dragging its edge never fights you. |
+| Folds to: Minimal, Hidden | **Minimal** folds it to a 52px rail, room for each space's and agent's number and status dot. **Hidden** takes it away entirely; the window's left edge brings it back. |
+| Beside Settings | The palette icon in the sidebar footer that opens the Studio. |
+
+Both need your own copy of the layout, like Glass. Auto-hide is the sidebar folded (or hidden)
+in the layout, plus an empty floating block from the Studio that watches the pointer; turning it
+off takes both away. Herdr can't put its sidebar in a slide-over drawer (a mod can't hold another
+mod's views), so it opens in place.
 
 ### Cursor shape
 
@@ -197,7 +225,7 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 - **True window transparency** isn't possible from a mod. Herdr has no setting for it:
   [herdr-app#190](https://github.com/herdrdev/herdr-app/issues/190).
 - A layout switch closes Herdr's overlay windows, so steps that span one (making the copy,
-  Revert) run as a detached `herdr-app do` script that also
+  Undo all) run as a detached `herdr-app do` script that also
   reopens the Studio.
 
 ## Commands
@@ -205,17 +233,18 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
 with the Studio open:
 
-Manager: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import` ·
-editor: `tab=<colors|type|glass>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
+Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|theme|close` ·
+settings: `autohide=rail|hidden|off` · `button=on|off` ·
+editor: `tab=<colors|type|glass|agents>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
-`button=on|off` · `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
+`copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
 ## Checks
 
 ```sh
-node mods/theme-studio/lib.test.mjs          # pure logic: contrast, importers (incl. iTerm2 plist), glass tree edits, header patch
+node mods/theme-studio/lib.test.mjs          # pure logic: contrast, importers (incl. iTerm2 plist), glass and auto-hide tree edits, header patch
 herdr-app check ~/.config/herdr-app/mods/theme-studio
 ```
 
@@ -224,13 +253,14 @@ herdr-app check ~/.config/herdr-app/mods/theme-studio
 ```
 install.sh
 mods/theme-studio/
-  main.js          the window, its tabs and the command API
+  main.js          the window, its views and the command API, and the auto-hide watcher
   lib.js           pure helpers, tested by lib.test.mjs
   frost.jxa.js     wallpaper blur (osascript -l JavaScript)
   bloom.jxa.js     bloom background render (base color plus three glows)
   palette.svg      sidebar icon
+  icons/           the window's own icons (Lucide)
   presets/         12 theme files + SOURCES.md
-docs/              design page source, build plan, screenshots, the ASCII ram (herdr-ram.svg)
+docs/              design page source, the layout audition (design/), build plan, screenshots, the ASCII ram
 RECIPE.md          the brief to build it from scratch
 keys.json          the key it expects
 ```

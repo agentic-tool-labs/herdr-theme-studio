@@ -1582,7 +1582,9 @@ export default class ThemeStudio extends View {
     const path = g.bg === "frost" ? g.frost : g.bg === "image" ? g.image : g.bg === "bloom" ? g.bloom : "";
     const backdrop = g.bg === "gradient" ? (across ? h_flex() : v_flex()).size_full().bg(to).children(bands)
       : g.bg === "bloom" && (this.bloomPending || !path) ? this.bloomMock(g, c)
-      : path ? image(path).size_full() : div().size_full().bg(g.bg === "bloom" ? this.glassHex("bloomBase", g, c) : c.canvas);
+      // image() fits inside its box; twice the box, centered, fills it for any picture near 16:10.
+      // ponytail: a far wider or taller picture still letterboxes; needs an image fit option from Herdr.
+      : path ? div().relative().size_full().overflow_hidden().child(image(path).absolute().left("-50%").top("-50%").w("200%").h("200%")) : div().size_full().bg(g.bg === "bloom" ? this.glassHex("bloomBase", g, c) : c.canvas);
     const size = v.font_size, text = c.terminal_foreground || c.foreground;
     const line = (parts) => h_flex().gap(Math.round(size * 0.6)).children(parts.map(([s, col]) => div().text_color(col).child(v.font_ligatures ? s : breakLigatures(s))));
     const card = (title, lines, tail) => v_flex().flex_1().h_full().min_w(0).rounded(g.radius).overflow_hidden().bg(term)
