@@ -84,7 +84,8 @@ const presetColors = (f) => ({
   ...Object.fromEntries(f.ansi.map((c, i) => [`ansi${i}`, c])), ...(f.colors || {}),
 });
 // Glass colors that can hold a fixed hex. Applying a new theme puts these back to the theme's own.
-const GLASS_COLORS = ["from", "to", "bloomBase", "glowA", "glowB", "glowC", "behind"];
+// Herdr's own type (its docs: JetBrains Mono 14, Geist, no ligatures, contrast 1), for a theme that saved none.
+const TYPE_DEFAULT = { font: "JetBrains Mono", font_size: 14, ui_font: "Geist", font_ligatures: false, minimum_contrast: 1 };
 const MIN_SIZE = 8, MAX_SIZE = 32;
 const CONTRASTS = [1, 1.6, 3, 4.5, 7];
 
@@ -454,13 +455,28 @@ export default class ThemeStudio extends View {
 
   glassShown() { return { ...this.glass, ...this.themeReset(), ...this.glassDraft }; }
 
-  // With a theme staged: its own saved glass, or else the glass colors set to a fixed hex go back to
-  // their theme-following defaults.
+  // With a theme staged: its own saved glass, or else none (Herdr's solid look). Nothing carries
+  // over from the theme before it.
   themeReset() {
     if (!this.themeDraft) return {};
     const ex = extrasOf(this.themeDraft.name);
-    if (ex && ex.glass && this.personal()) return { ...GLASS_DEFAULT, ...ex.glass, bloom: "", frost: this.glass.frost }; // bloom re-renders
-    return Object.fromEntries(GLASS_COLORS.filter((k) => String(this.glass[k] || "").startsWith("#")).map((k) => [k, GLASS_DEFAULT[k]]));
+    return { ...GLASS_DEFAULT, ...((ex && ex.glass) || {}), bloom: "", frost: this.glass.frost }; // bloom re-renders
+  }
+  // A staged theme's own agents list and cursor, or Herdr's when it saved none.
+  themeAgents() {
+    if (!this.themeDraft) return null;
+    const ex = extrasOf(this.themeDraft.name);
+    return { ...AGENTS_DEFAULT, ...((ex && ex.agents) || {}) };
+  }
+  themeType() {
+    if (!this.themeDraft) return null;
+    const ex = extrasOf(this.themeDraft.name);
+    return { ...TYPE_DEFAULT, ...((ex && ex.type) || {}) };
+  }
+  themeCursor() {
+    if (!this.themeDraft) return null;
+    const ex = extrasOf(this.themeDraft.name);
+    return { shape: "block", blink: false, ...((ex && ex.cursor) || {}) };
   }
 
   // Stages a theme (installed, or a bundled preset); picking the applied one drops the stage.
@@ -509,8 +525,7 @@ export default class ThemeStudio extends View {
   // The agents list as the clone shows it now, and with what's staged (a picked theme's own, then edits).
   agentsNow() { return { ...AGENTS_DEFAULT, ...(shared(K.agents) || {}) }; }
   agentsShown() {
-    const ex = this.themeDraft && extrasOf(this.themeDraft.name);
-    return { ...this.agentsNow(), ...((ex && ex.agents) || {}), ...this.agentsDraft };
+    return { ...(this.themeAgents() || this.agentsNow()), ...this.agentsDraft };
   }
   stageAgents(patch, cx) {
     const now = this.agentsNow();
@@ -526,7 +541,7 @@ export default class ThemeStudio extends View {
     return a[key] || (tok && normHex(c[tok] || "")) || "#00000000";
   }
 
-  cursorShown() { return { shape: "block", blink: false, ...(shared(K.cursor) || {}), ...this.cursorDraft }; }
+  cursorShown() { return { ...(this.themeCursor() || { shape: "block", blink: false, ...(shared(K.cursor) || {}) }), ...this.cursorDraft }; }
 
   stageCursor(patch, cx) {
     const now = { shape: "block", blink: false, ...(shared(K.cursor) || {}) };
@@ -618,12 +633,13 @@ export default class ThemeStudio extends View {
   // Everything staged, in one guarded task: settings.json, the theme file, then the layout.
   // `after` runs inside the same task once everything is written (the editor's Save, Edit's apply).
   applyAll(cx, after) {
-    const th = this.themeDraft, ex = th && extrasOf(th.name), colors = this.colorDraft;
+    const th = this.themeDraft, colors = this.colorDraft;
     // A theme with saved type and cursor brings them too; anything staged on top wins.
-    const type = { ...((ex && ex.type) || {}), ...this.draft };
-    const cursor = { ...(ex && ex.cursor ? { ...this.cursorShown(), ...ex.cursor } : {}), ...this.cursorDraft };
+    const type = { ...(this.themeType() || {}), ...this.draft };
+    // A new theme brings its own glass, cursor and agents list, or Herdr's when it saved none.
+    const cursor = { ...(this.themeCursor() || {}), ...this.cursorDraft };
     const glass = { ...this.themeReset(), ...this.glassDraft };
-    const agents = { ...((ex && ex.agents) || {}), ...this.agentsDraft };
+    const agents = { ...(this.themeAgents() || {}), ...this.agentsDraft };
     if (!th && ![type, colors, glass, cursor, agents].some((d) => Object.keys(d).length)) return after && cx.spawn((cx) => this.guard(cx, "Opening", after));
     cx.spawn((cx) => this.guard(cx, "Applying", async () => {
       const done = [];
@@ -1546,7 +1562,7 @@ export default class ThemeStudio extends View {
 
   typeValues(s) {
     const now = { font: s.font_family, ui_font: s.ui_font_family, font_size: s.font_size, font_ligatures: !!s.font_ligatures, minimum_contrast: s.minimum_contrast ?? 1 };
-    return { now, v: { ...now, ...this.draft } };
+    return { now, v: { ...now, ...(this.themeType() || {}), ...this.draft } };
   }
 
   // settings() with what was just written, which Herdr can take ~10 s to report.

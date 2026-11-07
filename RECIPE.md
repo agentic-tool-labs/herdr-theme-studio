@@ -195,7 +195,10 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   cursor }` in shared `theme-studio.themes` under its name (glass without rendered picture paths:
   Bloom and Frosted render again on apply, since old renders get deleted). Yours = names in
   `theme-studio.owned` that `themes()` lists; Herdr's and presets are forked on their first Save, so
-  an original can't be changed by accident. Copy carries the extras along; Delete removes the
+  an original can't be changed by accident. Applying a theme writes all of them: its own, or for
+  any it didn't save, Herdr's (glass `GLASS_DEFAULT`, the solid look; cursor block, steady; agents
+  `AGENTS_DEFAULT`; type JetBrains Mono 14, Geist, no ligatures, contrast 1), so nothing from the
+  previous theme carries over. The library's preview shows the same. Copy carries the extras along; Delete removes the
   file, the name and the extras, and refuses a theme in use.
 - **Staging**: the library's pick, and the editor's Type, Colors and Glass controls, stage into
   drafts (theme pick, settings, theme tokens, glass, cursor); previews, sliders and the picker

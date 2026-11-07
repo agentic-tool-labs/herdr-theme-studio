@@ -95,9 +95,10 @@ Every action is on the card itself:
 
 **A theme holds everything.** Its colors live in `themes/<name>.json`. Once you save it in the editor,
 it also keeps its type, glass, cursor and agents-list settings, in shared state beside it.
-Using the theme brings all of that back. A theme that has only colors (Herdr's, a preset, a fresh
-import) leaves your type, glass and agents list as they are, and resets glass colors you set
-by hex to the theme's own. Picking a dark theme sets dark mode's theme, and a light one sets light mode's.
+Using the theme brings all of that back. Nothing carries over from the theme before: a theme that has only
+colors (Herdr's, a preset, a fresh import), or saved only some of these, gets Herdr's own for the
+rest. That's no glass or picture, a block cursor, Herdr's agents list, and JetBrains Mono 14 with
+Geist for the panels. Picking a dark theme sets dark mode's theme, and a light one sets light mode's.
 
 The **⋯** at the top right has **Import a theme…**, **Show the themes folder** and **Undo all Theme
 Studio changes…**, which restores `settings.json`, the layout and the theme picks from the snapshot
