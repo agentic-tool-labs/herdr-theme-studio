@@ -336,6 +336,51 @@ const AGENTS_PATCH = [
   [".when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\\u00b7 ${more}`))))",
     ".when(Boolean(studioMore), el => el.child(div().flex_1().min_w(0).truncate().text_color(studioAgents().detailColor || t.dim).child(`\\u00b7 ${studioMore}`))))"],
 ];
+// --- Parts and inheritance ---------------------------------------------------------------------
+// A theme's type, cursor, glass and agents list are each its own, inherited from another theme
+// ("from:<name>"), or "default": the theme Settings › Defaults names for that part in its mode.
+// The source is `ex.src[part]`; older saves have none, so a saved part is its own.
+export const PARTS = ["type", "cursor", "glass", "agents"];
+export const PART_LABEL = { type: "Type", cursor: "Cursor", glass: "Glass", agents: "Agents list" };
+
+/** "own", "default" or "from:<name>" for one part of a theme's extras. */
+export function partSource(ex, part) {
+  const s = ex && ex.src && ex.src[part];
+  return s || (ex && ex[part] ? "own" : "default");
+}
+
+/** Follows a part to where its values live. `ctx`: { all: name → extras, defaults: { dark, light }
+ *  (part → theme), light(name) }. Returns { value (null: Herdr's), why: own | inherit | default |
+ *  herdr, from (the theme it points at), chain (every theme visited) }. A loop ends at Herdr's. */
+export function resolvePart(ctx, name, part, seen = []) {
+  if (seen.includes(name)) return { value: null, why: "herdr", from: null, chain: seen };
+  const chain = [...seen, name], ex = ctx.all[name], src = partSource(ex, part);
+  if (src === "own") return ex && ex[part] ? { value: ex[part], why: "own", from: null, chain } : { value: null, why: "herdr", from: null, chain };
+  if (src.startsWith("from:")) {
+    const f = src.slice(5), r = resolvePart(ctx, f, part, chain);
+    return { ...r, why: "inherit", from: f };
+  }
+  const d = ((ctx.defaults || {})[ctx.light(name) ? "light" : "dark"] || {})[part];
+  if (d && d !== name) { const r = resolvePart(ctx, d, part, chain); return { ...r, why: "default", from: d }; }
+  return { value: null, why: "herdr", from: null, chain };
+}
+
+/** The themes whose `part` reaches `name` (inherited, or through a default), not counting itself. */
+export function dependents(ctx, name, names) {
+  const out = [];
+  for (const n of names) if (n !== name) for (const p of PARTS) if (resolvePart(ctx, n, p).chain.slice(1).includes(name)) out.push([n, p]);
+  return out;
+}
+
+/** One part as shareable JSON, and back. */
+export const PART_TAG = "theme-studio-part";
+export function partJson(part, value, name) { return JSON.stringify({ [PART_TAG]: 1, kind: part, name, value }, null, 2); }
+export function parsePart(text) {
+  let j; try { j = JSON.parse(String(text || "")); } catch { return { error: "That isn't a Theme Studio part (it's not JSON)" }; }
+  if (!j || j[PART_TAG] !== 1 || !PARTS.includes(j.kind) || !j.value || typeof j.value !== "object") return { error: "That isn't a Theme Studio part" };
+  return { kind: j.kind, value: j.value, name: j.name || "" };
+}
+
 // --- Updates ------------------------------------------------------------------------------------
 // The Studio compares its mod.json version with the repo's latest GitHub release and can install
 // that release over itself. studioUpdate runs in the Studio and, as source, in the footer clone

@@ -7,12 +7,12 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart } from "./lib.js";
 
 const HOME = appHome();
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults" };
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -119,6 +119,8 @@ export default class ThemeStudio extends View {
     this.colorDraft = {}; // theme tokens not yet applied: hex, or null to reset
     this.cursorDraft = {}; // cursor shape and blink not yet applied
     this.themeDraft = null; // { name, preset?, colors } picked on Themes, not yet applied
+    this.srcDraft = {}; // the editor's part sources not yet saved: part → "own" | "default" | "from:<name>"
+    this.openMenu = null; // the part bar's or Defaults' open menu
     this.pickTarget = null; // the color the picker edits: "tok:<token>" or "glass:<key>"
     this.fontQuery = "";
     this.importing = false; // the import panel open on the library
@@ -255,7 +257,11 @@ export default class ThemeStudio extends View {
     else if (verb === "size" && num) this.setSetting({ font_size: num }, `Text size ${num}`, cx);
     else if (verb === "stage") { const [k, ...r] = arg.split(":"), x = r.join(":"); this.stage(k, x === "true" ? true : x === "false" ? false : isNaN(+x) ? x : +x, cx); }
     else if (verb === "apply") this.view === "edit" ? this.saveEdit(cx) : this.applyAll(cx);
-    else if (verb === "menu") this.menuOpen = arg === "more";
+    else if (verb === "menu") { this.menuOpen = arg === "more"; this.openMenu = arg && arg !== "more" && arg !== "close" ? arg : null; }
+    // The editor's part sources: source=<part>:own|default|from:<theme>; copy-part=<part>:<theme>.
+    else if (verb === "source") { const [part, ...rest] = arg.split(":"); if (PARTS.includes(part)) this.setSource(part, rest.join(":"), cx); }
+    else if (verb === "copy-part") { const [part, from] = arg.split(":"); if (PARTS.includes(part)) this.copyPart(part, from, cx); }
+    else if (verb === "default") { const [mode, part, name] = arg.split(":"); if (PARTS.includes(part) && (mode === "dark" || mode === "light")) this.setDefault(mode, part, name || null, cx); }
     else if (verb === "hover") this.hoverCard = arg || null; // a theme card's hover actions, for screenshots
     else if (verb === "font-menu") { this.fontOpen = arg === "close" ? null : arg === "ui" ? "ui_font" : "font"; cx.notify(); }
     else if (verb === "cancel") this.cancelAll(cx);
@@ -459,24 +465,119 @@ export default class ThemeStudio extends View {
   // over from the theme before it.
   themeReset() {
     if (!this.themeDraft) return {};
-    const ex = extrasOf(this.themeDraft.name);
-    return { ...GLASS_DEFAULT, ...((ex && ex.glass) || {}), bloom: "", frost: this.glass.frost }; // bloom re-renders
+    return this.partFull("glass", this.partValue(this.themeDraft.name, "glass"));
   }
-  // A staged theme's own agents list and cursor, or Herdr's when it saved none.
-  themeAgents() {
-    if (!this.themeDraft) return null;
-    const ex = extrasOf(this.themeDraft.name);
-    return { ...AGENTS_DEFAULT, ...((ex && ex.agents) || {}) };
+  // A staged theme's parts, wherever they come from (its own, another theme's, a default), else Herdr's.
+  themeAgents() { return this.themeDraft ? this.partFull("agents", this.partValue(this.themeDraft.name, "agents")) : null; }
+  themeType() { return this.themeDraft ? this.partFull("type", this.partValue(this.themeDraft.name, "type")) : null; }
+  themeCursor() { return this.themeDraft ? this.partFull("cursor", this.partValue(this.themeDraft.name, "cursor")) : null; }
+
+  // --- parts: where each of a theme's parts comes from ---------------------------------------
+  isLight(name) {
+    const th = themes().find((x) => x.name === name);
+    if (th) return !!th.light;
+    const p = this.presets.find((x) => x.name === name);
+    return !!(p && contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background));
   }
-  themeType() {
-    if (!this.themeDraft) return null;
-    const ex = extrasOf(this.themeDraft.name);
-    return { ...TYPE_DEFAULT, ...((ex && ex.type) || {}) };
+  // What resolvePart reads; `over` swaps one theme's part source (the editor's unsaved choice).
+  partCtx(over) {
+    const all = { ...(shared(K.themes) || {}) };
+    if (over) { const ex = all[over.name] || {}; all[over.name] = { ...ex, src: { ...(ex.src || {}), [over.part]: over.src } }; }
+    return { all, defaults: shared(K.defaults) || {}, light: (n) => this.isLight(n) };
   }
-  themeCursor() {
-    if (!this.themeDraft) return null;
-    const ex = extrasOf(this.themeDraft.name);
-    return { shape: "block", blink: false, ...((ex && ex.cursor) || {}) };
+  partValue(name, part, src) { return resolvePart(this.partCtx(src && { name, part, src }), name, part).value; }
+  // A part's values filled out with Herdr's for what it doesn't set.
+  partFull(part, v) {
+    v = v || {};
+    if (part === "type") return { ...TYPE_DEFAULT, ...v };
+    if (part === "cursor") return { shape: "block", blink: false, ...v };
+    if (part === "agents") return { ...AGENTS_DEFAULT, ...v };
+    return { ...GLASS_DEFAULT, ...v, bloom: "", frost: this.glass.frost }; // bloom re-renders
+  }
+  // The editor theme's source for a part, counting an unsaved change.
+  editSource(part) { return this.srcDraft[part] || partSource(extrasOf(this.editing), part); }
+  // Changing a control on a part that comes from elsewhere makes it this theme's own (on Save).
+  touchPart(part) {
+    if (this.sourcing || this.view !== "edit" || !this.editing) return;
+    if (this.editSource(part) !== "own") this.srcDraft[part] = "own";
+  }
+  // Stages a part's values as the editor's drafts, against what's applied now.
+  stagePart(part, v, cx) {
+    const want = this.partFull(part, v), diff = (now, keys) => Object.fromEntries(keys.filter((k) => JSON.stringify(now[k]) !== JSON.stringify(want[k])).map((k) => [k, want[k]]));
+    this.sourcing = true;
+    try {
+      if (part === "type") this.draft = diff(this.typeValues(this.shown()).now, Object.keys(TYPE_DEFAULT));
+      else if (part === "cursor") this.cursorDraft = diff({ shape: "block", blink: false, ...(shared(K.cursor) || {}) }, ["shape", "blink"]);
+      else if (part === "agents") this.agentsDraft = diff(this.agentsNow(), Object.keys(AGENTS_DEFAULT));
+      else {
+        this.glassDraft = diff(this.glass, Object.keys(GLASS_DEFAULT).filter((k) => k !== "frost"));
+        if (this.glassShown().bg === "bloom") this.scheduleBloom(cx); else delete this.glassDraft.bloom;
+      }
+    } finally { this.sourcing = false; }
+    this.syncControls();
+    cx.notify();
+  }
+  // Points a part somewhere else (own, default, from:<theme>) and shows what that brings.
+  setSource(part, src, cx) {
+    const ex = extrasOf(this.editing) || {};
+    if (src === partSource(ex, part)) delete this.srcDraft[part]; else this.srcDraft[part] = src;
+    // Its own brings back the values it last saved; with none saved, it keeps what's showing.
+    const v = src === "own" ? ex[part] : this.partValue(this.editing, part, src);
+    if (src !== "own" || ex[part]) this.stagePart(part, v, cx); else cx.notify();
+  }
+  copyPart(part, from, cx) {
+    this.stagePart(part, this.partValue(from, part), cx);
+    this.srcDraft[part] = "own";
+    this.say(`${PART_LABEL[part]} copied from ${from}. Save keeps it as this theme's own.`, "info", cx);
+  }
+  // The part as it shows now, for Copy JSON.
+  partNow(part) {
+    if (part === "type") return this.typeValues(this.shown()).v;
+    if (part === "cursor") return this.cursorShown();
+    if (part === "agents") return this.agentsShown();
+    return { ...this.glassShown(), bloom: "", frost: "" };
+  }
+  pastePart(part, cx) {
+    const r = parsePart(cx.read_from_clipboard() || "");
+    if (r.error) return this.say(r.error, "error", cx);
+    if (r.kind !== part) return this.say(`That's ${PART_LABEL[r.kind].toLowerCase()}, not ${PART_LABEL[part].toLowerCase()}: paste it on its own tab`, "error", cx);
+    this.stagePart(part, r.value, cx);
+    this.srcDraft[part] = "own";
+    this.say(`Pasted ${r.name || PART_LABEL[part].toLowerCase()}. Save keeps it.`, "info", cx);
+  }
+  setDefault(mode, part, name, cx) {
+    const d = shared(K.defaults) || {}, m = { ...(d[mode] || {}) };
+    if (name) m[part] = name; else delete m[part];
+    setShared(K.defaults, { ...d, [mode]: m });
+    this.say(name ? `${name}'s ${PART_LABEL[part].toLowerCase()} is the default for ${mode} themes` : `${PART_LABEL[part]} for ${mode} themes is back to Herdr's`, "success", cx);
+  }
+  // Every other theme takes this part from the theme being edited. Their own values stay saved.
+  useEverywhere(part, cx) {
+    const all = { ...(shared(K.themes) || {}) }, from = this.editing;
+    for (const n of this.themeNames()) if (n !== from) { const ex = all[n] || {}; all[n] = { ...ex, src: { ...PARTS.reduce((o, p) => ({ ...o, [p]: partSource(ex, p) }), {}), ...(ex.src || {}), [part]: `from:${from}` } }; }
+    setShared(K.themes, all);
+    this.ask = null;
+    this.say(`Every theme takes its ${PART_LABEL[part].toLowerCase()} from ${from}`, "success", cx);
+  }
+  // Themes the library lists (a theme named like a layout belongs to that layout).
+  themeNames() { return themes().filter((th) => th.name === shared("layout") || !layouts().includes(th.name)).map((th) => th.name); }
+  // Themes others take parts from (a default, or inherited from), worked out once per render.
+  baseThemes() {
+    const d = shared(K.defaults) || {}, ctx = this.partCtx(), out = new Set();
+    for (const m of ["dark", "light"]) for (const n of Object.values(d[m] || {})) out.add(n);
+    for (const n of this.themeNames()) for (const p of PARTS) for (const x of resolvePart(ctx, n, p).chain.slice(1)) out.add(x);
+    return out;
+  }
+  // The themes a part can inherit from without a loop.
+  partSources(part) {
+    const me = this.editing, ctx = this.partCtx();
+    // Themes with something to give first: their own, or inherited; Herdr's look last.
+    const ok = this.themeNames().filter((n) => n !== me && !resolvePart(ctx, n, part).chain.includes(me));
+    return [...ok.filter((n) => resolvePart(ctx, n, part).why !== "herdr"), ...ok.filter((n) => resolvePart(ctx, n, part).why === "herdr")];
+  }
+  partWhy(name, part) {
+    const r = resolvePart(this.partCtx(), name, part);
+    return r.why === "own" ? "its own" : r.why === "inherit" ? `from ${r.from}` : r.why === "default" ? `default · ${r.from}` : "Herdr's";
   }
 
   // Stages a theme (installed, or a bundled preset); picking the applied one drops the stage.
@@ -508,11 +609,15 @@ export default class ThemeStudio extends View {
 
   changes() {
     const n = (o, skip) => Object.keys(o).filter((k) => k !== skip).length;
-    return { theme: this.themeDraft ? 1 : 0, agents: n(this.agentsDraft), type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
+    const src = (p, k) => (p in this.srcDraft && !k ? 1 : 0);
+    const c = { theme: this.themeDraft ? 1 : 0, agents: n(this.agentsDraft), type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
+    c.agents += src("agents", c.agents); c.type += src("type", c.type); c.glass += src("glass", c.glass); c.colors += src("cursor", n(this.cursorDraft));
+    return c;
   }
 
   // Merges a patch into the glass draft (null drops the draft), dropping keys back at their applied value.
   stageGlass(patch, cx) {
+    if (patch) this.touchPart("glass");
     if (!patch) this.glassDraft = {};
     for (const [k, v] of Object.entries(patch || {})) {
       if (this.glass[k] === v) delete this.glassDraft[k]; else this.glassDraft[k] = v;
@@ -528,6 +633,7 @@ export default class ThemeStudio extends View {
     return { ...(this.themeAgents() || this.agentsNow()), ...this.agentsDraft };
   }
   stageAgents(patch, cx) {
+    this.touchPart("agents");
     const now = this.agentsNow();
     for (const [k, v] of Object.entries(patch)) if (now[k] === v) delete this.agentsDraft[k]; else this.agentsDraft[k] = v;
     const a = this.agentsShown();
@@ -544,6 +650,7 @@ export default class ThemeStudio extends View {
   cursorShown() { return { ...(this.themeCursor() || { shape: "block", blink: false, ...(shared(K.cursor) || {}) }), ...this.cursorDraft }; }
 
   stageCursor(patch, cx) {
+    this.touchPart("cursor");
     const now = { shape: "block", blink: false, ...(shared(K.cursor) || {}) };
     for (const [k, v] of Object.entries(patch)) if (now[k] === v) delete this.cursorDraft[k]; else this.cursorDraft[k] = v;
     cx.notify();
@@ -624,7 +731,7 @@ export default class ThemeStudio extends View {
   }
 
   cancelAll(cx) {
-    this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {};
+    this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {}; this.srcDraft = {};
     this.pickFor = null; this.leaving = false;
     this.syncControls();
     cx.notify();
@@ -657,7 +764,7 @@ export default class ThemeStudio extends View {
       if (this.personal() && (Object.keys(glass).length || th)) { await this.writeGlass(cx, glass); if (Object.keys(glass).length) done.push("glass"); }
       if (Object.keys(cursor).length) { await this.writeCursor({ ...this.cursorShown(), ...cursor }); done.push("cursor"); }
       if (Object.keys(agents).length && this.personal()) { await this.writeAgents(cx, { ...this.agentsNow(), ...agents }); done.push("agents list"); }
-      this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {};
+      this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {}; this.srcDraft = {};
       this.pickFor = null; this.syncControls();
       this.say(`Applied ${done.join(", ")}`, "success", cx);
       if (after) await after(cx);
@@ -1034,6 +1141,15 @@ export default class ThemeStudio extends View {
     if (!this.isOwn(name)) return this.say(`${name} isn't yours to delete`, "error", cx);
     if (this.inUse(name)) return this.say(`${name} is in use: apply another theme first`, "error", cx);
     cx.spawn((cx) => this.guard(cx, `Deleting ${name}`, async () => {
+      // Themes taking a part from it (directly or as a default) get that part copied in first.
+      const ctx = this.partCtx(), all = { ...ctx.all };
+      for (const [n, p] of dependents(ctx, name, this.themeNames())) {
+        const v = resolvePart(ctx, n, p).value, ex = all[n] || {};
+        all[n] = { ...ex, [p]: v || undefined, src: { ...PARTS.reduce((o, q) => ({ ...o, [q]: partSource(ex, q) }), {}), [p]: v ? "own" : "default" } };
+      }
+      setShared(K.themes, all);
+      const d = shared(K.defaults) || {};
+      setShared(K.defaults, Object.fromEntries(Object.entries(d).map(([m, ps]) => [m, Object.fromEntries(Object.entries(ps || {}).filter(([, v]) => v !== name))])));
       await fs.unlink(themePath(name));
       setShared(K.owned, ownedThemes().filter((n) => n !== name));
       setExtras(name, null);
@@ -1057,15 +1173,22 @@ export default class ThemeStudio extends View {
   // The editor's Save: write what's staged, then keep type, glass and cursor with the theme.
   saveEdit(cx, then) {
     if (!this.editing) return;
+    // Each part keeps its source; parts that are its own take what's showing. A part it doesn't own
+    // keeps the values it last saved, so switching it back to its own brings them back.
+    const prev = extrasOf(this.editing) || {};
+    const src = Object.fromEntries(PARTS.map((p) => [p, this.srcDraft[p] || partSource(prev, p)]));
     this.applyAll(cx, async (cx) => {
       const name = await this.ownEditing(cx), s = this.shown();
-      setExtras(name, {
+      const live = {
         type: { font: s.font_family, font_size: s.font_size, ui_font: s.ui_font_family, font_ligatures: s.font_ligatures, minimum_contrast: s.minimum_contrast },
         // Rendered pictures are dropped as newer ones replace them, so the theme keeps the recipe and re-renders.
-        glass: this.personal() ? { ...this.glass, bloom: "", frost: "" } : null,
+        glass: this.personal() ? { ...this.glass, bloom: "", frost: "" } : prev.glass || null,
         cursor: this.cursorShown(),
         agents: this.agentsNow(),
-      });
+      };
+      const ex = { src };
+      for (const p of PARTS) { const v = src[p] === "own" ? live[p] : prev[p]; if (v) ex[p] = v; }
+      setExtras(name, ex);
       this.leaving = false;
       this.say(`Saved ${name}`, "success", cx);
       if (then) then(cx);
@@ -1239,6 +1362,12 @@ export default class ThemeStudio extends View {
     if (ask && ask.kind === "revert") return bar(note("Undo all Theme Studio changes? Your theme files stay.", t.blocked, t.foreground),
       this.button("ask-cancel", "Keep it", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
       this.button("revert", "Undo all", t, (_e, cx) => { this.ask = null; this.revert(cx); }, true));
+    if (edit && ask && ask.kind === "everywhere") {
+      const own = this.themeNames().filter((x) => x !== this.editing && partSource(extrasOf(x), ask.part) === "own");
+      return bar(note(`Every theme will take its ${PART_LABEL[ask.part].toLowerCase()} from ${this.editing}.${own.length ? ` ${own.join(", ")} ${own.length > 1 ? "have their" : "has its"} own; it stays saved.` : ""}`, t.accent, t.foreground),
+        this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
+        this.button("everywhere-go", "Use everywhere", t, (_e, cx) => this.useEverywhere(ask.part, cx), true));
+    }
     if (edit) {
       const n = this.changeCount(), own = ownedThemes().includes(this.editing), as = own ? this.editing : this.forkName(this.editing);
       if (this.leaving && n) return bar(note(`Save your changes to ${as}?`, t.working, t.foreground),
@@ -1260,12 +1389,90 @@ export default class ThemeStudio extends View {
         .child(div().flex_1().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.copyName).w_full().h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))),
       this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
       this.button("copy-go", "Copy", t, (_e, cx) => this.copyTheme(ask.from, this.copyName.value(), cx), true));
-    if (ask && ask.kind === "delete") return bar(note(`Delete ${name}? Its file in themes/ goes too.`, t.blocked, t.foreground),
+    if (ask && ask.kind === "delete") {
+      const uses = [...new Set(dependents(this.partCtx(), name, this.themeNames()).map(([n]) => n))];
+      return bar(note(`Delete ${name}? Its file in themes/ goes too.${uses.length ? ` ${uses.join(", ")} ${uses.length > 1 ? "take parts" : "takes a part"} from it and keep${uses.length > 1 ? "" : "s"} a copy.` : ""}`, t.blocked, t.foreground),
       this.button("ask-cancel", "Keep it", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
-      this.button("delete-go", "Delete", t, (_e, cx) => this.deleteTheme(name, cx), true));
+      this.button("delete-go", "Delete", t, (_e, cx) => this.deleteTheme(name, cx), true)); }
     // The library's actions are on its cards; the bar comes up only to ask or to say something.
     if (this.busy || (said && Date.now() - (m.at || 0) < 8000)) return bar(note(said ? said.text : "Working…", null, said ? said.color : null));
     return null;
+  }
+
+  // --- part bar: where this tab's part comes from, and mixing parts between themes ------------
+  popMenu(id, t, trigger, items, anchor = "top_left", w = 270) {
+    const open = this.openMenu === id;
+    const toggle = (_e, cx) => { this.openMenu = !open && Date.now() - (this.menuClosedAt || 0) > 300 ? id : null; cx.notify(); };
+    return Popup.new(`pm-${id}`, trigger(open, toggle)).anchor(anchor)
+      .when(open, (el) => el.content(v_flex().id(`pmc-${id}`).w(w).max_h(360).overflow_y_scroll().p(5).rounded(11).border_1().border_color(t.input).bg(t.raised).shadow_lg()
+        .on_mouse_down_out((_e, cx) => { this.openMenu = null; this.menuClosedAt = Date.now(); cx.notify(); })
+        .children(items())));
+  }
+  menuItem(t, id, label, onClick, o = {}) {
+    return h_flex().id(`mi-${id}`).px(9).py(6).gap(8).rounded(7).items_center().cursor_pointer().hover((st) => st.bg(t.hover))
+      .on_click((e, cx) => { this.openMenu = null; onClick(e, cx); cx.notify(); })
+      .child(div().w(12).flex_none().text_size(12).text_color(t.accent).child(o.check ? "✓" : ""))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(o.danger ? t.blocked : t.foreground).child(label))
+      .when(!!o.sub, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(o.sub)));
+  }
+  menuHead(t, text) { return div().px(9).pt(6).pb(2).text_size(10.5).font_semibold().text_color(t.dim).child(text.toUpperCase()); }
+  menuSep(t) { return div().h(1).mx(3).my(4).bg(t.border); }
+  pillButton(t, id, label, open, onClick) {
+    return h_flex().id(id).h(26).px(10).gap(6).flex_none().items_center().rounded(7).cursor_pointer().text_size(12)
+      .border_1().border_color(open ? t.accent : t.input).bg(t.raised).text_color(t.foreground).hover((st) => st.border_color(t.accent))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(onClick)
+      .child(label).child(div().text_size(10).text_color(t.dim).child("▾"));
+  }
+
+  partBar(t, part) {
+    const name = this.editing, src = this.editSource(part), r = resolvePart(this.partCtx({ name, part, src }), name, part);
+    const label = src === "own" ? "Its own" : src.startsWith("from:") ? `From ${src.slice(5)}` : `Default · ${r.from || "Herdr's"}`;
+    const mode = this.isLight(name) ? "light" : "dark", dflt = ((shared(K.defaults) || {})[mode] || {})[part];
+    const srcMenu = this.popMenu(`src-${part}`, t, (open, toggle) => this.pillButton(t, `src-${part}`, label, open, toggle), () => [
+      this.menuItem(t, `src-own-${part}`, "Its own", (_e, cx) => this.setSource(part, "own", cx), { check: src === "own" }),
+      this.menuItem(t, `src-def-${part}`, "Default", (_e, cx) => this.setSource(part, "default", cx), { check: src === "default", sub: dflt && dflt !== name ? dflt : "Herdr's" }),
+      this.menuSep(t), this.menuHead(t, "Inherit from"),
+      ...this.partSources(part).map((n) => this.menuItem(t, `src-from-${part}-${n}`, n, (_e, cx) => this.setSource(part, `from:${n}`, cx), { check: src === `from:${n}`, sub: this.partWhy(n, part) })),
+    ]);
+    const copyMenu = this.popMenu(`copy-${part}`, t, (open, toggle) => this.pillButton(t, `copy-${part}`, "Copy from", open, toggle),
+      () => [this.menuHead(t, "A one-time copy, as its own"), ...this.partSources(part).map((n) => this.menuItem(t, `copy-${part}-${n}`, n, (_e, cx) => this.copyPart(part, n, cx), { sub: this.partWhy(n, part) }))], "top_right");
+    const more = this.popMenu(`more-${part}`, t, (open, toggle) => this.iconButton(`more-${part}`, "more", "More", t, toggle, open), () => [
+      this.menuItem(t, `json-${part}`, "Copy JSON", (_e, cx) => { cx.write_to_clipboard(partJson(part, this.partNow(part), `${name} ${PART_LABEL[part].toLowerCase()}`)); this.say(`Copied ${name}'s ${PART_LABEL[part].toLowerCase()} as JSON`, "success", cx); }),
+      this.menuItem(t, `paste-${part}`, "Paste JSON", (_e, cx) => this.pastePart(part, cx)),
+      this.menuSep(t),
+      this.menuItem(t, `def-dark-${part}`, "Make the default for dark themes", (_e, cx) => this.setDefault("dark", part, name, cx), { check: ((shared(K.defaults) || {}).dark || {})[part] === name }),
+      this.menuItem(t, `def-light-${part}`, "Make the default for light themes", (_e, cx) => this.setDefault("light", part, name, cx), { check: ((shared(K.defaults) || {}).light || {})[part] === name }),
+      this.menuItem(t, `every-${part}`, "Use for every theme…", () => { this.ask = { kind: "everywhere", part }; }),
+    ], "top_right", 260);
+    const from = r.why === "inherit" || r.why === "default" ? r.from : null;
+    const dirty = this.changeCount() > 0;
+    return v_flex().gap(6)
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_none().text_size(12).text_color(t.muted).child(`${PART_LABEL[part]} comes from`))
+        .child(srcMenu).child(div().flex_1()).child(copyMenu).child(more))
+      .when(!!from, (el) => el.child(v_flex().gap(2)
+        .child(div().text_size(11.5).line_height("16px").text_color(t.dim).child(`These are ${from}'s. Change one here and it becomes ${name}'s own, or`))
+        .child(this.link(`open-src-${part}`, `edit them on ${from}`, t, (_e, cx) => dirty ? this.say("Save or discard your changes first", "info", cx) : this.editTheme(from, cx)))));
+  }
+
+  // Settings › Defaults: per part, the theme dark and light themes take it from when they don't say.
+  defaultsSection(t) {
+    const d = shared(K.defaults) || {}, names = this.themeNames();
+    const cell = (mode, part) => {
+      const cur = (d[mode] || {})[part];
+      return this.popMenu(`dflt-${mode}-${part}`, t, (open, toggle) => this.pillButton(t, `dflt-${mode}-${part}`, cur || "Herdr's", open, toggle), () => [
+        this.menuItem(t, `dflt-${mode}-${part}-none`, "Herdr's", (_e, cx) => this.setDefault(mode, part, null, cx), { check: !cur }),
+        this.menuSep(t),
+        ...names.map((n) => this.menuItem(t, `dflt-${mode}-${part}-${n}`, n, (_e, cx) => this.setDefault(mode, part, n, cx), { check: cur === n, sub: this.partWhy(n, part) })),
+      ]);
+    };
+    const head = (x) => div().w(140).text_size(10.5).font_semibold().text_color(t.dim).child(x.toUpperCase());
+    return this.section("Defaults", t, v_flex().gap(8)
+        .child(h_flex().gap(10).child(div().w(96)).child(head("Dark themes")).child(head("Light themes")))
+        .children(PARTS.map((p) => h_flex().gap(10).items_center()
+          .child(div().w(96).text_size(12.5).child(PART_LABEL[p]))
+          .child(div().w(140).child(cell("dark", p))).child(div().w(140).child(cell("light", p))))),
+      "A theme's type, cursor, glass and agents list are each its own, inherited from another theme, or Default: the theme picked here for its mode. Set a part's source at the top of its tab in the editor. A theme others take parts from shows under Base in the library. A change here shows the next time you apply a theme.");
   }
 
   // --- the theme library ---------------------------------------------------------------
@@ -1273,7 +1480,8 @@ export default class ThemeStudio extends View {
     // A theme named like a layout belongs to that layout (Herdr offers it only there).
     const all = themes().filter((th) => th.name === shared("layout") || !layouts().includes(th.name));
     const q = this.themeQuery.trim().toLowerCase(), f = this.themeFilter;
-    const shows = (x) => (!q || x.name.toLowerCase().includes(q)) && (f === "all" || (f === "light") === !!x.light);
+    const base = this.bases = this.baseThemes();
+    const shows = (x) => (!q || x.name.toLowerCase().includes(q)) && (f === "all" || (f === "base" ? base.has(x.name) : (f === "light") === !!x.light));
     const pick = (name) => (_e, cx) => { this.ask = null; this.stageTheme(name, cx); };
     const item = (th) => ({ name: th.name, colors: th.colors, light: th.light });
     const presets = this.presets.filter((p) => !all.some((th) => th.name === p.name))
@@ -1287,7 +1495,7 @@ export default class ThemeStudio extends View {
         .child(h_flex().flex_1().min_w(0).h(30).px(9).gap(7).items_center().rounded(8).border_1().border_color(t.input).bg(t.background)
           .child(svg(`${ICONS}/search.svg`).size(14).flex_none().text_color(t.dim))
           .child(Input.new(this.themeSearch).flex_1().min_w(0).h(28).text_color(t.foreground)))
-        .child(this.seg("thf", [["all", "All"], ["dark", "Dark"], ["light", "Light"]], f, t, (v, cx) => { this.themeFilter = v; cx.notify(); }))
+        .child(this.seg("thf", [["all", "All"], ["dark", "Dark"], ["light", "Light"], ["base", "Base"]], f, t, (v, cx) => { this.themeFilter = v; cx.notify(); }))
         .child(this.button("import-open", this.importing ? "Close" : "Import", t, (_e, cx) => { if (this.importing) { this.importing = false; cx.notify(); } else this.goTo("import", cx); })))
       .when(this.importing, (el) => el.child(this.importPanel(t)))
       .child(this.section("Your themes", t, grid(all.filter((th) => this.isOwn(th.name)).map(item), "None yet. Edit one of Herdr's below: Save makes it yours."),
@@ -1342,7 +1550,7 @@ export default class ThemeStudio extends View {
           .child(svg(`${ICONS}/check.svg`).size(12)).child("Apply")))
         .when(!staged, (el) => el.child(h_flex().flex_none().gap(4).items_center().text_size(11).text_color(dim)
           .when(used, (el) => el.child(div().size(6).rounded(3).bg(t.done)))
-          .child(used ? "In use" : x.light ? "Light" : "Dark"))));
+          .child(used ? "In use" : `${this.bases && this.bases.has(x.name) ? "Base · " : ""}${x.light ? "Light" : "Dark"}`))));
   }
 
   importPanel(t) {
@@ -1420,6 +1628,7 @@ export default class ThemeStudio extends View {
       : div().text_size(11.5).text_color(t.dim).child("Needs your own copy of this layout (Glass tab).");
     const cur = this.cursorShown();
     const cursor = v_flex().gap(2)
+      .child(div().pb(6).child(this.partBar(t, "cursor")))
       .child(this.row(t, "Shape", this.seg("cur", [["block", "Block"], ["underline", "Underline"], ["bar", "Bar"]], cur.shape, t, (v, cx) => this.stageCursor({ shape: v }, cx))))
       .child(this.row(t, "Blink", this.toggle("cur-blink", cur.blink, t, (_e, cx) => this.stageCursor({ blink: !cur.blink }, cx))))
       .child(this.row(t, "Color", this.chip(t, "cur-color", "Cursor", c.cursor || c.foreground, sel === "tok:cursor", (_e, cx) => this.selectTarget("tok:cursor", cx))));
@@ -1449,6 +1658,7 @@ export default class ThemeStudio extends View {
       .child(div().text_size(11.5).text_color(t.dim).child("Your own .ttf and .otf files load from the fonts folder."))
       .child(this.link("fonts-open", "Open it", t, (_e, cx) => cx.spawn(async () => { await fs.mkdir(`${HOME}/fonts`, { recursive: true }).catch(() => {}); await exec("open", [`${HOME}/fonts`]); })));
     return v_flex().gap(22)
+      .child(this.partBar(t, "type"))
       .child(this.section("Fonts", t, fonts,
         "Herdr has no font weight, character or line spacing, or anti-aliasing settings, so those aren't here. Panel text has no size setting either: panels follow Herdr's zoom (⌘+ / ⌘−). Fonts in the fonts folder load without installing them system-wide.", { hint: folder }))
       .child(this.section("Minimum contrast", t, this.row(t, "Lift faint text",
@@ -1494,6 +1704,7 @@ export default class ThemeStudio extends View {
       image: "Choose a picture, drop one on the row, or type a path. Herdr only reads pictures in its own folder, so one from elsewhere is copied into backgrounds/ first.",
     };
     return v_flex().gap(22)
+      .child(this.partBar(t, "glass"))
       .child(this.section("Start from", t, h_flex().gap(8).children(Object.entries(GLASS_PRESETS).map(([n, p]) => thumb(n, p))),
         "A starting point: it sets every control below at once. Change any of them after."))
       .child(this.section("Window background", t, background, tips[g.bg]))
@@ -1514,6 +1725,7 @@ export default class ThemeStudio extends View {
     const seg = (id, opts, key) => this.seg(id, opts, a[key], t, (v, cx) => this.stageAgents({ [key]: v }, cx), true);
     const sw = (id, label, key) => this.row(t, label, this.toggle(id, a[key], t, (_e, cx) => this.stageAgents({ [key]: !a[key] }, cx)));
     return v_flex().gap(22)
+      .child(this.partBar(t, "agents"))
       .child(this.section("Layout", t, v_flex().gap(2)
         .child(this.row(t, "Density", this.seg("agp", Object.keys(AGENT_PRESETS).map((n) => [n, n]), preset ? preset[0] : null, t, (n, cx) => this.stageAgents({ ...AGENT_PRESETS[n] }, cx), true)))
         .child(this.stacked(t, "Start from", this.seg("agst", CARD_STARTS.map(([id, label]) => [id, label]), null, t, (id, cx) => this.startCard(id, cx), true))),
@@ -1539,6 +1751,7 @@ export default class ThemeStudio extends View {
   settingsView(t) {
     if (!this.personal()) return v_flex().gap(22).child(this.needsCopy(t, "Sidebar settings need your own copy of this layout",
       `Herdr's own layouts (${shared("layout")}) can't change. A copy can hide its sidebar and hold the palette icon; Herdr keeps updating everything else. The Studio closes for a moment while Herdr switches.`, "colors"))
+      .child(this.defaultsSection(t))
       .child(this.updatesSection(t));
     const mode = autoHideMode(layout()), auto = !!mode, icon = hasFooterIcon(layout());
     return v_flex().gap(22)
@@ -1549,6 +1762,7 @@ export default class ThemeStudio extends View {
         { hint: !auto ? null : mode === "rail" ? "Rest the pointer on the rail to open the sidebar." : "Move the pointer to the window's left edge to bring it back." }))
       .child(this.section("Palette icon", t, this.row(t, "Beside Settings", this.toggle("set-icon", icon, t, (_e, cx) => this.setButton(!icon, cx))),
         "An icon in the sidebar's Settings row (under Settings on the narrow rail) that opens Theme Studio. Herdr's own Settings screen can't take extra sections, so it lives there. It shows a dot when an update is ready, and looks for one while the Studio is closed."))
+      .child(this.defaultsSection(t))
       .child(this.updatesSection(t));
   }
 
@@ -1572,6 +1786,7 @@ export default class ThemeStudio extends View {
   }
 
   stage(key, value, cx) {
+    this.touchPart("type");
     const { now } = this.typeValues(this.shown());
     if (now[key] === value) delete this.draft[key]; else this.draft[key] = value;
     cx.notify();

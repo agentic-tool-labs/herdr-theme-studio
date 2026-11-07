@@ -93,12 +93,33 @@ Every action is on the card itself:
 
   Duplicate and Delete ask in a bar that comes up along the bottom.
 
-**A theme holds everything.** Its colors live in `themes/<name>.json`. Once you save it in the editor,
-it also keeps its type, glass, cursor and agents-list settings, in shared state beside it.
-Using the theme brings all of that back. Nothing carries over from the theme before: a theme that has only
-colors (Herdr's, a preset, a fresh import), or saved only some of these, gets Herdr's own for the
-rest. That's no glass or picture, a block cursor, Herdr's agents list, and JetBrains Mono 14 with
-Geist for the panels. Picking a dark theme sets dark mode's theme, and a light one sets light mode's.
+**A theme holds everything.** Its colors live in `themes/<name>.json`. Beside them it has four
+**parts**: type, cursor, glass and the agents list. Each part is one of:
+
+- **Its own**: saved with the theme in the editor.
+- **Inherited** from another theme: whatever that theme's part is, so a change there shows here
+  too. A theme others take parts from is a **base**; the library's **Base** filter lists them, and
+  their cards say "Base".
+- **Default**: the theme [Settings › Defaults](#settings) names for that part, one for dark themes
+  and one for light. With none named, it's Herdr's own: no glass or picture, a block cursor,
+  Herdr's agents list, and JetBrains Mono 14 with Geist for the panels.
+
+Using a theme brings every part from wherever it comes from, so nothing carries over from the
+theme before. Picking a dark theme sets dark mode's theme, and a light one sets light mode's.
+
+![Agents list comes from: Default · dune](docs/screenshots/parts.png)
+
+At the top of the Type, Glass and Agents tabs (and in Colors › Cursor), **comes from** shows and
+changes a part's source: Its own, Default, or Inherit from any theme that wouldn't make a loop.
+While it's inherited, the tab says whose it is, with a link to edit it there; changing anything
+here makes it this theme's own instead. Beside it:
+
+- **Copy from**: a one-time copy of another theme's part, as this theme's own.
+- **⋯**: **Copy JSON** and **Paste JSON** (one part, to share or keep), **Make the default for dark
+  themes** / **light themes**, and **Use for every theme…**, which sets every other theme to inherit
+  it. A theme switched away from its own keeps those values saved, so switching back brings them back.
+
+Deleting a theme others take parts from copies those parts into them first, so they look the same.
 
 The **⋯** at the top right has **Import a theme…**, **Show the themes folder** and **Undo all Theme
 Studio changes…**, which restores `settings.json`, the layout and the theme picks from the snapshot
@@ -246,6 +267,7 @@ they apply at once.
 | Auto-hide | Keeps the sidebar out of the way until you need it. Rest the pointer on it and it opens, the terminals making room; move well past it and it folds back a moment later. A sidebar you open with Herdr's own fold button stays open, and dragging its edge never fights you. |
 | Folds to: Minimal, Hidden | **Minimal** folds it to a 52px rail, room for each space's and agent's number and status dot. **Hidden** takes it away entirely; the window's left edge brings it back. |
 | Beside Settings | The palette icon in the sidebar footer that opens the Studio. It shows a dot when an update is ready. |
+| Defaults | Per part (Type, Cursor, Glass, Agents list), the theme dark themes and light themes take it from when their part is set to Default, or Herdr's. It shows the next time you apply a theme. |
 | Updates | Your version and the latest release, **Check now**, **Update to v…**, **What's new**, and **Auto-update**. See [Updating](#updating). |
 
 Auto-hide and the icon need your own copy of the layout, like Glass; Updates don't. Auto-hide is the sidebar folded (or hidden)
@@ -287,12 +309,12 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
 with the Studio open:
 
-Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close` · `hover=<name>` (show a card's actions) ·
+Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close|<menu id>` · `hover=<name>` (show a card's actions) · `default=dark|light:<part>:<theme|>` ·
 settings: `autohide=rail|hidden|off` · `button=on|off` · `update=check|install` · `autoupdate=on|off` ·
 editor: `tab=<colors|type|glass|agents>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
-`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
+`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `source=<part>:own|default|from:<theme>` · `copy-part=<part>:<theme>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
 ## Checks

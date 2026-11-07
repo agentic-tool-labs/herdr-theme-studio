@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -326,3 +326,32 @@ const host = (over = {}) => {
   assert.ok(!r.newer && h.toasts.length === 0, "up to date: quiet");
 }
 console.log("lib.test: updates passed");
+
+// parts: own, inherited, defaults per mode, loops, and who depends on a theme
+{
+  const all = {
+    dune: { type: { font: "Meslo" }, agents: { card: 1 }, cursor: { shape: "bar" } }, // an older save: no src, so its own
+    cool: { src: { glass: "from:green" } },
+    green: { glass: { bg: "bloom" }, src: { glass: "own", agents: "default" } },
+    loopA: { src: { glass: "from:loopB" } }, loopB: { src: { glass: "from:loopA" } },
+    paper: {},
+  };
+  const ctx = { all, defaults: { dark: { agents: "dune", type: "dune" }, light: { agents: "dune" } }, light: (n) => n === "paper" };
+  assert.equal(partSource(all.dune, "type"), "own"); assert.equal(partSource(all.dune, "glass"), "default");
+  assert.deepEqual(resolvePart(ctx, "dune", "type").value, { font: "Meslo" });
+  const g = resolvePart(ctx, "cool", "glass");
+  assert.ok(g.why === "inherit" && g.from === "green" && g.value.bg === "bloom", "inherits live");
+  const a = resolvePart(ctx, "green", "agents");
+  assert.ok(a.why === "default" && a.from === "dune" && a.value.card === 1, "a default reaches the default theme's part");
+  assert.equal(resolvePart(ctx, "paper", "type").why, "herdr", "light themes use the light defaults");
+  assert.equal(resolvePart(ctx, "paper", "agents").from, "dune");
+  assert.equal(resolvePart(ctx, "dune", "glass").why, "herdr", "the default theme without its own falls to Herdr's");
+  assert.equal(resolvePart(ctx, "loopA", "glass").value, null, "a loop ends at Herdr's");
+  const d = dependents(ctx, "dune", Object.keys(all)).map((x) => x.join("."));
+  assert.ok(d.includes("cool.agents") && d.includes("paper.agents") && d.includes("cool.type") && !d.includes("paper.type"), d.join(","));
+  assert.deepEqual(dependents(ctx, "green", Object.keys(all)), [["cool", "glass"]]);
+  const j = parsePart(partJson("glass", { bg: "image" }, "Dune glass"));
+  assert.ok(j.kind === "glass" && j.value.bg === "image" && j.name === "Dune glass");
+  assert.ok(parsePart("{}").error && parsePart("nope").error);
+}
+console.log("lib.test: parts passed");

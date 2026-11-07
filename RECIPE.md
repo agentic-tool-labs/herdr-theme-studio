@@ -86,7 +86,8 @@ Views:
   themes (files the Studio wrote or imported), Herdr's and others (the rest of `themes()`, minus
   themes named like a layout), Bundled presets (not yet installed). Cards are 176px little
   windows, radius 10: a 76px picture of the theme (a sidebar, lines in its text colors, six ANSI
-  bars) over a 32px caption with the name and Dark/Light, or "● In use". The picked card has an
+  bars) over a 32px caption with the name and Dark/Light (with "Base · " when others take parts
+  from it), or "● In use". The filter seg is All / Dark / Light / Base. The picked card has an
   `accent` border; while it's previewing (not the theme in use) its caption ends in **✓ Apply**, a
   22px `accent` pill. Under the pointer, a 34px `popover` strip with a `border` line above covers
   the bottom of the picture, holding 24px buttons (radius 6, `raised`, a 1px `input` border that
@@ -154,8 +155,21 @@ Views:
     definition. For a row: Wrap, Justify (stacked), Gap (stacked), Under the name. For a label:
     Label key, Shows as (Text / Pill), Prefix, Color (Accent, Working, Blocked, Dim), If missing
     (Hide / Show text) and that text.
+- **Part bar**, at the top of the Type, Glass and Agents tabs and of Colors › Cursor: "<Part> comes
+  from" (12px `muted`), a 26px menu button (radius 7, `raised`, a 1px `input` border, `accent` when
+  open, a `dim` ▾) reading Its own / Default · <theme or Herdr's> / From <theme>, then **Copy from**
+  and ⋯ on the right. Menus are 270px `Popup`s (radius 11, `raised`, `shadow_lg`, 360px tall at
+  most, scrolling): rows 12.5px with an `accent` ✓ and an 11px `dim` note of where that theme's
+  part comes from; 10.5px `dim` headings ("INHERIT FROM"). The source menu: Its own, Default (its
+  default theme), then Inherit from (themes with their own or inherited part first). ⋯: Copy JSON,
+  Paste JSON, Make the default for dark / light themes (✓ when it is), Use for every theme… (asks
+  in the bar: "Every theme will take its <part> from <name>. <themes> have their own; it stays
+  saved." with Cancel and Use everywhere). When inherited or default, an 11.5px `dim` line under it:
+  "These are <theme>'s. Change one here and it becomes <name>'s own, or" and a link "edit them on
+  <theme>". JSON is `{ "theme-studio-part": 1, kind, name, value }`; Paste refuses another kind.
 - **Settings**: Sidebar (Auto-hide toggle; when on, Folds to: Minimal / Hidden), Palette icon
-  (Beside Settings toggle), and Updates: Version ("v<installed> · Up to date", "· v<latest> is
+  (Beside Settings toggle), Defaults (a row per part with a Dark themes and a Light themes menu
+  button: Herdr's, then every theme), and Updates: Version ("v<installed> · Up to date", "· v<latest> is
   available" or "· Not checked yet"), an Auto-update toggle, then **Check now** ("Checking…"),
   **Update to v<latest>** (primary, when one is out) and **What's new**, with a hint "Last checked
   <date>." plus any failure. On Herdr's own layouts, the same make-a-copy card as Glass, then
@@ -195,7 +209,16 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   cursor }` in shared `theme-studio.themes` under its name (glass without rendered picture paths:
   Bloom and Frosted render again on apply, since old renders get deleted). Yours = names in
   `theme-studio.owned` that `themes()` lists; Herdr's and presets are forked on their first Save, so
-  an original can't be changed by accident. Applying a theme writes all of them: its own, or for
+  an original can't be changed by accident. Since 0.7 each part also has a source in `src`
+  (`own`, `default`, `from:<theme>`; a save from before it has none, so its saved parts are its own).
+  `resolvePart` (lib.js) follows it: its own values; another theme's part, followed the same way; or
+  the theme shared `theme-studio.defaults` (`{ dark: { part: theme }, light: {…} }`) names for the
+  part in its mode; else Herdr's. A loop ends at Herdr's, and the inherit list leaves out themes that
+  would make one. Apply, the library's preview, the tabs' "comes from" and the Base filter all call
+  it. Save writes every part's source; parts that are its own take what's showing, the rest keep
+  the values they last saved, so switching back to Its own restores them. A control changed on an
+  inherited part makes it own. Delete first copies its parts into every theme that reaches it
+  (`dependents`) and drops it from the defaults. Applying a theme writes all of them: its own, or for
   any it didn't save, Herdr's (glass `GLASS_DEFAULT`, the solid look; cursor block, steady; agents
   `AGENTS_DEFAULT`; type JetBrains Mono 14, Geist, no ligatures, contrast 1), so nothing from the
   previous theme carries over. The library's preview shows the same. Copy carries the extras along; Delete removes the
@@ -250,7 +273,8 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
 - **Commands**: `herdr-app do theme-studio.<command>` or `"theme-studio:<command>"` in
   keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>`,
   `delete-theme=<name>`, `export=<name>`, `view=themes|import|settings`, `menu=more|close`,
-  `hover=<name>` (a card's actions, for screenshots), `update=check|install`, `autoupdate=on|off`,
+  `hover=<name>` (a card's actions, for screenshots), `menu=<id>` (a part bar or Defaults menu),
+  `source=<part>:own|default|from:<theme>`, `copy-part=<part>:<theme>`, `default=dark|light:<part>:<theme|>`, `update=check|install`, `autoupdate=on|off`,
   `card=one|two|auto|both`, `card-select=<row>.<i>|<row>`, `card-item=<key>:<value>`,
   `autohide=rail|hidden|off`, `back`, `save`, `discard`,
   `tab=colors|type|glass|agents`, `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
