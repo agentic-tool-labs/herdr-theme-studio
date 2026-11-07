@@ -224,7 +224,7 @@ function studioRadius() {
 // The agents list in the sidebar is Herdr's `agents` mod. The Studio's sizes and hidden parts go in a
 // clone, rebuilt from Herdr's current file, that reads them live from shared "theme-studio.agents".
 export const AGENTS_MOD = "agents-studio";
-export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true, lines: "one", lead: "space",
+export const AGENTS_DEFAULT = { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5, time: true, headers: true, icons: true, badge: true, lines: "one", lead: "space", show: "title", card: null, labels: null,
   detailText: 11, weight: "normal", statusSide: "right", radius: 8, pad: 8, space: 0,
   // Colors: "" is the theme's own.
   nameColor: "", detailColor: "", timeColor: "", cardColor: "", borderColor: "", selectedColor: "", hoverColor: "" };
@@ -233,7 +233,7 @@ const AGENTS_PATCH = [
   [".px(8)\n        .h(30)\n        .flex_none()\n        .rounded(8)\n        .items_center()\n        .gap(9)\n        .when(a.focused, (el) => el.bg(t.selected))\n        .cursor_pointer()\n        .hover((s) => s.bg(t.hover))",
     ".px(studioAgents().pad)\n        .h(studioAgents().row)\n        .flex_none()\n        .rounded(studioAgents().radius)\n        .items_center()\n        .gap(studioAgents().row < 26 ? 6 : 9)\n        .text_size(studioAgents().text)\n        .when(true, studioCard)\n        .when(a.focused, (el) => el.bg(studioAgents().selectedColor || t.selected))\n        .cursor_pointer()\n        .hover((s) => s.bg(studioAgents().hoverColor || t.hover))"],
   [".child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))",
-    ".child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(studioAgents().nameColor || (idle ? t.muted : t.foreground)).when(true, studioWeight).child(name))"],
+    ".child(div().min_w(0).max_w(studioMore ? 120 : 200).truncate().text_color(studioAgents().nameColor || (idle ? t.muted : t.foreground)).when(true, studioWeight).child(name))"],
   [".px(collapsed ? 0 : 8).overflow_y_scrollbar()", ".px(collapsed ? 0 : 8).when(!collapsed, (el) => el.gap(studioAgents().space)).overflow_y_scrollbar()"],
   [".when(Boolean(pic), el => el.child(div().id(`agent-fold-", ".when(studioAgents().statusSide === \"left\", (el) => el.child(studioLeft(this.status(t, a, true))))\n        .when(Boolean(pic) && studioAgents().icons, el => el.child(div().id(`agent-fold-"],
   [".when(this.hovered !== a.address && Boolean(when), el =>", ".when(this.hovered !== a.address && Boolean(when) && studioAgents().time, el =>"],
@@ -253,8 +253,45 @@ const AGENTS_PATCH = [
   ["      const name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));\n",
     `      let name = full ? a.space_name || label(a) : more ?? (/^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
       let studioMore = full && more ? more : "";
+      // A card from the designer: rows of items (studioDrawCard), in the same clickable card.
+      if (studioAgents().card) {
+        const S = studioAgents(), lb = (studioLabels && studioLabels.get(a.address)) || {};
+        const plain = /^\\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a);
+        return v_flex()
+          .id("ag-" + a.address)
+          .px(S.pad).py(3).min_h(S.row).flex_none().justify_center()
+          .rounded(S.radius).text_size(S.text)
+          .when(true, studioCard)
+          .when(a.focused, (el) => el.bg(S.selectedColor || t.selected))
+          .cursor_pointer()
+          .hover((s) => s.bg(S.hoverColor || t.hover))
+          .on_hover((on, cx) => {
+            if (on) this.hovered = a.address;
+            else if (this.hovered === a.address) this.hovered = null;
+            cx.notify();
+          })
+          .on_click(() => run("pane.focus", { pane: a.pane }))
+          .child(studioDrawCard(S.card, {
+            title: plain, space: full ? a.space_name || "" : "", machine, labels: lb, idle,
+            name: () => lb.name || studioName(a.address),
+            time: when ? duration(now - when) : null, hovered: this.hovered === a.address, pin,
+            status: (badge) => this.status(t, a, (byPriority && !isPinned) || !badge),
+            icon: pic ? (sz) => div().id("agent-fold-" + a.address).flex_none()
+              .when(subs.length > 0, (el) => el.on_click((_e, cx) => {
+                cx.stop_propagation();
+                this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
+                cx.notify();
+              }))
+              .child(icon(a.program, sz, t.foreground) || pic) : null,
+            fold: subs.length > 0 ? fold(a, subs) : null,
+          }, S, t, { div, h_flex, v_flex }));
+      }
+      // "name" / "both": the session's own name (Claude Code's /rename) instead of, or before, its title.
+      const studioN = studioAgents().show === "title" ? "" : studioName(a.address);
+      if (studioN && !full) [name, studioMore] = studioAgents().show === "both" && name !== studioN ? [studioN, name] : [studioN, ""];
+      else if (studioN) studioMore = studioAgents().show === "both" && studioMore && studioMore !== studioN ? studioN + " \\u00b7 " + studioMore : studioN;
       // "session": the session's title leads and its workspace follows.
-      if (studioMore && studioAgents().lead === "session") [name, studioMore] = [studioMore, name];
+      if (full && studioMore && studioAgents().lead === "session") [name, studioMore] = [studioMore, name];
       if (studioTwoLines(name, studioMore)) {
         const S = studioAgents(), gap = S.row < 26 ? 6 : 9, showPic = Boolean(pic) && S.icons, left = S.statusSide === "left";
         return v_flex()
@@ -293,9 +330,190 @@ const AGENTS_PATCH = [
             .when(!left, (el) => el.child(this.status(t, a, (byPriority && !isPinned) || !S.badge))));
       }
 `],
+  // A card from the designer reads terminal labels: once per render, and only then.
+  ["    const leads = leadPanes(panes());\n", "    const leads = leadPanes(panes());\n    const studioLabels = studioAgents().card ? new Map(terminals().map((x) => [x.address, x.labels || {}])) : null;\n"],
   // One line: the same order as two.
-  [".truncate().text_color(t.dim).child(`\\u00b7 ${more}`)", ".truncate().text_color(studioAgents().detailColor || t.dim).child(`\\u00b7 ${studioMore}`)"],
+  [".when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\\u00b7 ${more}`))))",
+    ".when(Boolean(studioMore), el => el.child(div().flex_1().min_w(0).truncate().text_color(studioAgents().detailColor || t.dim).child(`\\u00b7 ${studioMore}`))))"],
 ];
+// --- Updates ------------------------------------------------------------------------------------
+// The Studio compares its mod.json version with the repo's latest GitHub release and can install
+// that release over itself. studioUpdate runs in the Studio and, as source, in the footer clone
+// (whose palette icon is always mounted), so it uses nothing but its arguments and versionNewer.
+// What it found is in shared "theme-studio.update"; the auto-update switch is "theme-studio.autoupdate".
+export const UPDATE_KEY = "theme-studio.update";
+export const AUTO_UPDATE_KEY = "theme-studio.autoupdate";
+
+/** a is a later version than b ("0.6.0" > "0.5.2"; a leading v is ignored). */
+export function versionNewer(a, b) {
+  const p = (v) => String(v || "0").replace(/^v/, "").split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  const x = p(a), y = p(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+}
+
+/** Checks for a newer release (at most every 6 hours unless `force`) and installs it when asked
+ *  (`install`) or when auto-update is on. Posts a toast once per new version, and after every
+ *  install. `h`: { exec, shared, setShared, notify, read(path) -> text, home }. */
+export async function studioUpdate(h, o = {}) {
+  const KEY = "theme-studio.update", REPO = "agentic-tool-labs/herdr-theme-studio", dir = `${h.home}/mods/theme-studio`;
+  const open = { name: "mod.open", args: { name: "theme-studio" } };
+  const st = h.shared(KEY) || {};
+  let mine = "0.0.0";
+  try { mine = JSON.parse((await h.read(`${dir}/mod.json`)) || "{}").version || mine; } catch {}
+  let next = { ...st, installed: mine };
+  if (o.force || !st.checked || Date.now() - st.checked > 6 * 3600e3) {
+    const r = await h.exec("curl", ["-fsSL", "--max-time", "15", "-H", "Accept: application/vnd.github+json", `https://api.github.com/repos/${REPO}/releases/latest`]).catch(() => null);
+    let j = null;
+    try { j = r && r.code === 0 ? JSON.parse(r.stdout) : null; } catch {}
+    next = { ...next, checked: Date.now(), offline: !(j && j.tag_name) };
+    if (j && j.tag_name) next = { ...next, latest: String(j.tag_name).replace(/^v/, ""), url: j.html_url || "", notes: String(j.body || "").slice(0, 800) };
+  }
+  const newer = versionNewer(next.latest, mine);
+  // One install at a time, across the Studio and the footer.
+  const busy = st.installing && Date.now() - st.installing < 120e3;
+  // Auto-update waits while the Studio has unsaved changes: the new files reload it.
+  const auto = o.auto !== false && h.shared("theme-studio.autoupdate") && !h.shared("theme-studio.editing");
+  if (newer && !busy && (o.install || auto)) {
+    h.setShared(KEY, { ...next, installing: Date.now(), failed: "" });
+    // The release's mods/theme-studio, checked by Herdr, replaces this folder; the old one is
+    // kept until the new one is in place. Herdr's generated typings are carried over.
+    const sh = `set -e
+tag="$1"; dest="$2"; repo="$3"; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+curl -fsSL --max-time 90 "https://codeload.github.com/$repo/tar.gz/refs/tags/$tag" | tar -xz -C "$tmp"
+src=$(find "$tmp" -maxdepth 3 -type d -path "*/mods/theme-studio" | head -n 1)
+[ -n "$src" ] && [ -f "$src/main.js" ] && [ -f "$src/mod.json" ] || { echo "The download has no Theme Studio in it" >&2; exit 1; }
+rm -f "$src/lib.test.mjs"
+herdr-app check "$src" >/dev/null 2>&1 || { echo "Herdr's check refused $tag" >&2; exit 1; }
+for f in gpui-kit.d.ts jsconfig.json; do [ -f "$dest/$f" ] && cp "$dest/$f" "$src/$f"; done
+mv "$dest" "$tmp/old" && mv "$src" "$dest" || { [ -d "$tmp/old" ] && [ ! -d "$dest" ] && mv "$tmp/old" "$dest"; echo "Couldn't swap the files in" >&2; exit 1; }`;
+    const r = await h.exec("sh", ["-c", sh, "sh", `v${next.latest}`, dir, REPO]).catch((e) => ({ code: 1, stderr: String(e) }));
+    if (r.code === 0) {
+      next = { ...next, installed: next.latest, installing: 0, failed: "", told: next.latest };
+      h.setShared(KEY, next);
+      h.notify({ title: `Theme Studio updated to v${next.latest}`, body: `Was v${mine}. Open the Studio to see it.`, level: "success", action: open });
+      return { ...next, newer: false, updated: next.latest };
+    }
+    next = { ...next, installing: 0, failed: String(r.stderr || r.stdout || "the install failed").trim().split("\n").pop() };
+    h.setShared(KEY, next);
+    h.notify({ title: "Theme Studio couldn't update", body: next.failed, level: "error", action: open });
+    return { ...next, newer };
+  }
+  if (newer && st.told !== next.latest && !o.quiet) {
+    next.told = next.latest;
+    h.notify({ title: `Theme Studio v${next.latest} is available`, body: `You have v${mine}. Open the Studio to update.`, level: "info", action: open });
+  }
+  if (JSON.stringify(next) !== JSON.stringify(st)) h.setShared(KEY, next);
+  return { ...next, newer };
+}
+
+// --- Card designer ------------------------------------------------------------------------------
+// A card is rows of items, laid out like CSS flexbox:
+//   { rows: [{ items: [{ kind, grow, truncate, max, role, badge, id, size, color, weight }], wrap, justify, gap, indent }] }
+// An item's size, color and weight are its own; left unset, they come from its role (name, detail, time).
+// A label item ({ kind: "label", id }) shows a Herdr terminal label. Its look is defined once, in
+// the settings' `labels`: [{ id, key, style: "text" | "pill", prefix, color, missing: "hide" | "text", text }].
+export const CARD_ITEMS = [["status", "Status"], ["icon", "Icon"], ["name", "Name"], ["title", "Title"], ["space", "Space"], ["time", "Time"], ["machine", "Machine"]];
+export const isTextItem = (it) => ["name", "title", "space", "machine", "label"].includes(it.kind);
+
+/** The card today's switches draw (lines, lead, show, statusSide, icons, time, badge). */
+export function cardFrom(a) {
+  const st = { kind: "status", badge: a.badge !== false };
+  const left = a.statusSide === "left", icon = a.icons !== false ? [{ kind: "icon" }] : [], time = a.time !== false ? [{ kind: "time" }] : [];
+  const texts = a.show === "name" ? [{ kind: "name" }] : a.show === "both" ? [{ kind: "name" }, { kind: "title" }] : [{ kind: "title" }];
+  const words = a.lead === "session" ? [...texts, { kind: "space" }] : [{ kind: "space" }, ...texts];
+  if (a.lines === "two") {
+    const [first, ...rest] = words;
+    return { rows: [
+      { items: [...(left ? [st] : []), ...icon, { ...first, grow: true, truncate: true }] },
+      { indent: true, justify: "end", items: [...rest.map((it, i) => ({ ...it, grow: i === 0, truncate: true })), { kind: "machine" }, ...time, ...(left ? [] : [st])] },
+    ] };
+  }
+  const shown = words.map((it, i) => ({ ...it, grow: true, truncate: true, max: i < words.length - 1 ? 120 : 0 }));
+  return { rows: [{ wrap: a.lines === "auto", items: [...(left ? [st] : []), ...icon, ...shown, { kind: "machine" }, ...time, ...(left ? [] : [st])] }] };
+}
+
+/** The starting points the designer offers, from the switches they replace. */
+export const CARD_STARTS = [["one", "One line", { lines: "one" }], ["two", "Two lines", { lines: "two" }], ["auto", "Wraps", { lines: "auto" }], ["both", "Named", { lines: "two", show: "both" }]];
+
+/** One agent card's rows. `d` is the agent: its texts, labels and the elements its list already
+ *  builds (status, icon, pin, fold). Runs in the Studio's preview and, as source, in the agents clone,
+ *  so it uses nothing but its arguments. */
+export function studioDrawCard(card, d, S, t, ui) {
+  const { div, h_flex, v_flex } = ui;
+  const defs = S.labels || [];
+  const gap = (r) => (r.gap != null ? r.gap : S.row < 26 ? 6 : 9);
+  const weigh = (el, w) => w === "bold" ? el.font_bold() : w === "semibold" ? el.font_semibold() : w === "medium" ? el.font_medium() : el;
+  // A role's look, then the item's own size, color and weight over it.
+  const look = (el, role, it) => {
+    const r = role === "name" ? [S.text, S.nameColor || (d.idle ? t.muted : t.foreground), S.weight]
+      : role === "time" ? [S.timeText, S.timeColor || t.dim, "normal"]
+      : role === "accent" ? [S.detailText, t.accent, "normal"]
+      : [S.detailText, S.detailColor || t.dim, "normal"];
+    return weigh(el.text_size(it.size || r[0]).text_color(it.color || r[1]), it.weight || r[2]);
+  };
+  const text = (it) => {
+    if (it.kind === "name") return d.name() || d.title;
+    if (it.kind === "title") return d.title;
+    if (it.kind === "space") return d.space;
+    if (it.kind === "machine") return d.machine || "";
+    const def = defs.find((l) => l.id === it.id);
+    if (!def) return "";
+    const v = (d.labels || {})[def.key];
+    return v ? (def.prefix || "") + v : def.missing === "text" ? def.text || "" : "";
+  };
+  // grow: takes the spare width (flex: 1, or flex: auto in a row that wraps, so it can move down).
+  const size = (el, it, wrap) => {
+    el = it.grow ? (wrap ? el.flex_auto() : el.flex_1()) : el;
+    el = el.min_w(0);
+    el = it.truncate === false ? el.whitespace_nowrap().flex_none() : el.truncate();
+    return it.max > 0 ? el.max_w(it.max) : el;
+  };
+  const seen = new Set();
+  let first = true;
+  const item = (it, wrap) => {
+    if (it.kind === "status") return it.badge !== false ? div().flex_none().child(d.status(true))
+      : h_flex().w(16).flex_none().items_center().justify_center().child(d.status(false));
+    if (it.kind === "icon") return d.icon ? d.icon(it.size || S.icon) : null;
+    if (it.kind === "time") return d.hovered && d.pin ? d.pin : d.time ? look(div().flex_none().whitespace_nowrap(), "time", it).child(d.time) : null;
+    const s = text(it);
+    // Empty takes no room, and a text already on the card isn't said twice.
+    if (!s || (it.kind !== "label" && seen.has(s))) return null;
+    seen.add(s);
+    const def = it.kind === "label" ? defs.find((l) => l.id === it.id) : null;
+    if (def && def.style === "pill") {
+      const c = it.color || t[def.color] || def.color || t.accent;
+      return size(weigh(div().px(6).rounded(5).bg(c.slice(0, 7) + "26").text_color(c).text_size(it.size || S.badgeText), it.weight || "semibold"), it, wrap).child(s);
+    }
+    const role = it.role && it.role !== "auto" ? it.role : first ? "name" : "detail";
+    first = false;
+    return size(look(div(), role, it), it, wrap).child(s);
+  };
+  // "Under the name": row 1's status and icon, measured.
+  const lead = (((card.rows || [])[0] || {}).items || []).reduce((acc, it) => acc.done || isText(it) ? { ...acc, done: true }
+    : { done: false, px: acc.px + (it.kind === "icon" ? it.size || S.icon : it.kind === "status" ? 16 : 0) + gap(card.rows[0]) }, { done: false, px: 0 }).px;
+  function isText(it) { return ["name", "title", "space", "machine", "label"].includes(it.kind); }
+  const built = (card.rows || []).map((r) => (r.items || []).map((it) => ({ el: item(it, !!r.wrap), text: isText(it) })).filter((x) => x.el));
+  // The first row always names the agent: when its texts are all empty (a Space under its own
+  // header), the next text moves up.
+  if (built.length > 1 && !built[0].some((x) => x.text)) {
+    const from = built.findIndex((b) => b.some((x) => x.text));
+    if (from > 0) { const i = built[from].findIndex((x) => x.text); built[0].push(...built[from].splice(i, 1)); }
+  }
+  const rows = (card.rows || []).map((r, ri) => {
+    const els = built[ri].map((x) => x.el);
+    if (ri === 0 && d.fold) els.push(d.fold);
+    if (!els.length) return null;
+    let row = h_flex().min_w(0).items_center().gap(gap(r)).min_h(ri === 0 ? Math.max(16, S.row - 6) : 18);
+    if (r.wrap) row = row.flex_wrap();
+    const j = { center: "justify_center", end: "justify_end", between: "justify_between" }[r.justify];
+    if (j) row = row[j]();
+    if (r.indent && ri > 0) row = row.pl(lead);
+    return row.children(els);
+  }).filter(Boolean);
+  return v_flex().w_full().min_w(0).gap(1).children(rows);
+}
+
 /** Herdr's agents mod with the Studio's sizes and parts, or null when its code no longer matches. */
 export function patchAgents(src) {
   if (src.includes("studioAgents(")) return src;
@@ -313,6 +531,8 @@ function studioCard(el) {
   const s = studioAgents();
   return (s.cardColor ? el.bg(s.cardColor) : el).when(Boolean(s.borderColor), (e) => e.border_1().border_color(s.borderColor));
 }
+// A card from the designer. The Studio's own preview runs this same function.
+${studioDrawCard.toString()}
 // The status on the left: compact, in a fixed box so names line up.
 function studioLeft(status) { return h_flex().w(16).flex_none().items_center().justify_center().child(status); }
 function studioWeight(el) {
@@ -329,8 +549,30 @@ function studioTwoLines(name, more) {
 }
 `;
   const at = out.indexOf("\n", out.indexOf('from "herdr";')) + 1;
-  return out.slice(0, at) + helper + out.slice(at);
+  return out.slice(0, at) + helper + STUDIO_NAMES + out.slice(at);
 }
+
+// Claude Code keeps each running session in ~/.claude/sessions/<pid>.json, with its /rename name
+// (nameSource "user"); the process's environment says which Herdr terminal it runs in.
+const STUDIO_NAMES = `import { exec as studioExec } from "herdr";
+const STUDIO_NAMES_SH = 'for f in "$HOME"/.claude/sessions/*.json; do p=\${f##*/}; p=\${p%.json}; t=$(ps eww -o command= -p "$p" 2>/dev/null | tr " " "\\\\n" | sed -n "s/^HC_TERMINAL_ID=//p" | head -n 1); [ -n "$t" ] && printf "%s\\\\t%s\\\\n" "$t" "$(tr -d "\\\\n" < "$f")"; done; true';
+const studioNames = new Map();
+let studioNamesAt = 0;
+// The /rename name of the session in a terminal, or "". ponytail: re-read every 5 s through ps; fine for dozens of sessions.
+function studioName(address) {
+  if (Date.now() - studioNamesAt > 5000) {
+    studioNamesAt = Date.now();
+    studioExec("sh", ["-c", STUDIO_NAMES_SH]).then((r) => {
+      studioNames.clear();
+      for (const l of r.stdout.split("\\n")) {
+        const i = l.indexOf("\\t");
+        try { const s = JSON.parse(l.slice(i + 1)); if (i > 0 && s.nameSource === "user" && s.name) studioNames.set(l.slice(0, i), s.name); } catch {}
+      }
+    }, () => {});
+  }
+  return studioNames.get(address) || "";
+}
+`;
 
 /** Copy of a layout tree with its agents blocks on the Studio's clone (on) or Herdr's own mod. */
 export function withAgentsMod(tree, on) {
@@ -481,7 +723,7 @@ export const FOOTER_MOD = "workspace-chrome-studio";
 const SETTINGS_ROW = 'row("settings", "settings", "Settings", false, () => run("app.settings"))';
 const SETTINGS_DOT = /(\s*\.when\(Boolean\(updates\(\)\.app\.ready\), el => el\.child\(div\(\)\.size\(6\)\.rounded_full\(\)\.bg\(t\.accent\)\)\))\)/;
 
-export const FOOTER_PATCH = "theme-studio footer patch v3";
+export const FOOTER_PATCH = "theme-studio footer patch v4";
 
 /** Patches a pristine clone of Herdr's workspace-chrome so the footer's Settings row gets a
  *  palette button that opens Theme Studio: beside Settings when the sidebar is wide, on its own
@@ -495,19 +737,39 @@ export function patchFooter(src) {
   if (at < 0 || !SETTINGS_DOT.test(src.slice(at)) || !/from "herdr";/.test(src) || !/\n  render\(\) \{/.test(src)) return null;
   const helper = `
 // ${FOOTER_PATCH}: a palette button beside Settings (or under it on the
-// narrow rail) that opens Theme Studio.
+// narrow rail) that opens Theme Studio, with a dot when an update is ready.
+import { exec as studioExec, notify as studioNotify, readTextFile as studioRead, appHome as studioHome } from "herdr";
 const STUDIO_ROW = 28;
+${versionNewer.toString()}
+${studioUpdate.toString()}
+// The footer is always mounted, so it looks for Studio updates while the Studio is closed.
+// studioUpdate goes to the network at most every 6 hours.
+let studioWatching = false;
+function studioUpdates(cx) {
+  if (studioWatching || !props()?.footer) return;
+  studioWatching = true;
+  const h = { exec: studioExec, shared, setShared, notify: studioNotify, read: studioRead, home: studioHome() };
+  const tick = () => { studioUpdate(h).catch(() => {}); };
+  cx.timer.after(5000, tick);
+  cx.timer.every(30 * 60e3, tick);
+}
+function studioDot(el, t) {
+  const u = shared("theme-studio.update") || {};
+  const ready = versionNewer(u.latest, u.installed);
+  return el.relative().tooltip(ready ? \`Theme Studio: v\${u.latest} is ready to install\` : "Theme Studio")
+    .when(ready, (e) => e.child(div().absolute().top(2).right(2).size(7).rounded(4).bg(t.accent)));
+}
 function studioIcon(t) {
-  return div().id("theme-studio").size(26).flex_none().flex().items_center().justify_center().rounded(6)
+  return studioDot(div().id("theme-studio").size(26).flex_none().flex().items_center().justify_center().rounded(6)
     .text_color(t.muted).cursor_pointer().hover(s => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => run("mod.open", { name: "theme-studio" }))
-    .child(svg("mods/theme-studio/palette.svg").size(14));
+    .child(svg("mods/theme-studio/palette.svg").size(14)), t);
 }
 function studioRail(t) {
-  return h_flex().id("theme-studio-rail").h(STUDIO_ROW).px(8).items_center().rounded(8).text_color(t.muted).cursor_pointer()
+  return studioDot(h_flex().id("theme-studio-rail").h(STUDIO_ROW).px(8).items_center().rounded(8).text_color(t.muted).cursor_pointer()
     .hover(s => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => run("mod.open", { name: "theme-studio" }))
-    .child(svg("mods/theme-studio/palette.svg").size(14));
+    .child(svg("mods/theme-studio/palette.svg").size(14)), t);
 }
 // The footer block is sized for its own rows: one more on the rail, back when wide.
 function studioFit(cx) {
@@ -526,7 +788,7 @@ function studioFit(cx) {
 }`;
   const imp = src.indexOf("\n", src.lastIndexOf('from "herdr";')) + 1;
   let out = src.slice(0, imp) + helper + src.slice(imp);
-  out = out.replace(/\n  render\(\) \{/, "\n  render(cx) {\n    studioFit(cx);");
+  out = out.replace(/\n  render\(\) \{/, "\n  render(cx) {\n    studioFit(cx);\n    studioUpdates(cx);");
   const row = out.indexOf(".child(" + SETTINGS_ROW);
   const head = out.slice(0, row), tail = out.slice(row);
   return head + tail

@@ -35,12 +35,23 @@ open Studio window keeps its old build until you close and reopen it.
 
 ## Updating
 
-Herdr mods have no update channel, so check the
-[tags](https://github.com/agentic-tool-labs/herdr-theme-studio/tags) for a newer version. To update, tell
-your agent: "Update Theme Studio from github.com/agentic-tool-labs/herdr-theme-studio: replace my
-`mods/theme-studio/` folder with the repo's." Say "replace": by default an agent adds a second copy
-under a new name rather than overwrite. Your themes (with their saved type and glass), settings and layouts live outside
-that folder and stay. Close and reopen the Studio afterwards.
+From v0.6.1 the Studio updates itself. It checks the repo's latest
+[release](https://github.com/agentic-tool-labs/herdr-theme-studio/releases) when it opens, and every
+6 hours from the palette icon while it's closed. A newer one shows three ways: a dot on the palette
+icon, a banner across the top of the Studio with **What's new** and **Update**, and a Herdr notice
+(once per version; clicking it opens the Studio). **Update** downloads the release, has Herdr check
+it, and swaps it in for `mods/theme-studio/`; Herdr reloads the Studio from the new files, and a
+notice says it's done (or why it couldn't). [Settings](#settings) has **Check now** and an
+**Auto-update** switch, which installs a release as soon as it's found but never while you have
+unsaved changes.
+
+![An update ready: the banner and Settings › Updates](docs/screenshots/update.png)
+
+Your themes (with their saved type and glass), settings and layouts live outside that folder and
+stay. On v0.5.0 or earlier, update once by hand: tell your agent "Update Theme Studio from
+github.com/agentic-tool-labs/herdr-theme-studio: replace my `mods/theme-studio/` folder with the
+repo's." Say "replace": by default an agent adds a second copy under a new name rather than
+overwrite.
 
 ## Opening it
 
@@ -54,8 +65,9 @@ that folder and stay. Close and reopen the Studio afterwards.
 
 ## A tour
 
-Every view has the same shape: a big preview of the whole window on the left, the controls on the
-right, and one bar along the bottom that says what's going on and holds the buttons that act on it.
+Every view has the same shape: a big preview of the whole window on the left and the controls on the
+right. In the editor and Settings a bar along the bottom says what's going on and holds the buttons
+that act on it.
 The screenshots are of dune, with a picture as its window background.
 
 ### The theme library
@@ -63,17 +75,23 @@ The screenshots are of dune, with a picture as its window background.
 ![The theme library, with dune in use](docs/screenshots/manager.png)
 
 This is what opens. Click a theme to preview it on the left; nothing changes in the real window
-until **Use it**. Search by name, filter to Dark or Light, and the sections run Your themes,
+until you apply it. Search by name, filter to Dark or Light, and the sections run Your themes,
 Herdr's and others, then the 12 bundled presets (`presets/`, sources in `presets/SOURCES.md`).
-The bar along the bottom acts on the theme you picked:
+Every action is on the card itself:
 
-- **Use it** makes it the theme in use. Using a preset copies it into `themes/`, so Herdr's
-  Settings lists it too. **Cancel** drops the preview.
-- **Edit** opens the editor. On one of Herdr's themes or a preset it reads **Edit a copy**: you
-  edit it straight away, and the first Save keeps your changes as `<name>-custom` (numbered if
-  that's taken), so the original stays as it was.
-- **⋯** has **Duplicate…** (your own copy under a name you type), **Copy JSON** (the theme in
-  Herdr's format, for sharing) and **Delete…** (yours, when it's not in use).
+![Hover a card for its actions; the picked one has Apply](docs/screenshots/manager-cards.png)
+
+- **Apply**, on the card you picked, makes it the theme in use. Using a preset copies it into
+  `themes/`, so Herdr's Settings lists it too. Click the theme in use to drop the preview.
+- **Hover a card** for a strip of buttons along its bottom:
+  - **Edit**. On one of Herdr's themes or a preset it's **Edit a copy**: you edit it straight
+    away, and the first Save keeps your changes as `<name>-custom` (numbered if that's taken), so
+    the original stays as it was.
+  - **Duplicate…**: your own copy under a name you type.
+  - **Copy JSON**: the theme in Herdr's format, for sharing.
+  - **Delete…**: yours, when it's not in use.
+
+  Duplicate and Delete ask in a bar that comes up along the bottom.
 
 **A theme holds everything.** Its colors live in `themes/<name>.json`. Once you save it in the editor,
 it also keeps its type, glass, cursor and agents-list settings, in shared state beside it.
@@ -164,17 +182,51 @@ no icons (right):
 
 ![The agents list before and after](docs/screenshots/agents-compare.png)
 
+While you edit agents, the preview narrows to the sidebar's agents list, and the item you select
+in the designer opens in a column on the right, so its settings never need a scroll.
+
+**The card designer** lays out one agent card. Drag items from the palette onto its rows, drag
+them along a row to reorder, or back onto the palette to take them off. The items:
+
+- **Status**: the spinner, dot or "Needs you" badge.
+- **Icon**: the agent's program icon.
+- **Name**: the name you gave the session (below); without one, its title.
+- **Title**: the title Claude Code writes for the chat.
+- **Space**: the space name, hidden under its own group header.
+- **Time**: the time since.
+- **Machine**: for agents on another machine.
+- **+ Label item**: a value from a Herdr terminal label (below), drawn as text or as a pill.
+
+A row works like a web flex row: **Wrap**, **Justify** (start, center, between, end), **Gap**, and
+**Under the name** to indent it past the icon. Each item has its own **Text size**, **Color** and
+**Weight** (each with a Reset), plus **Grow**, **Truncate**, **Max width**, **Style** (whose look it
+starts from: Auto, Name, Detail or Accent) and, for status, the badge. **Start from** sets up the rows: One line, Two lines, Wraps (two lines only when the name
+won't fit), or Named (your name on top, Claude Code's title under it).
+
+**Names and labels.** Claude Code stops writing a chat's title once you `/rename` it, so a Name
+item that shows both needs a name kept somewhere else: a Herdr terminal label. Set one from
+anywhere, or from inside the session, and the card shows it at once:
+
+```sh
+hc label "$HC_TERMINAL_ID" name=theme-studio   # set
+hc label "$HC_TERMINAL_ID" name=               # remove
+```
+
+The Name item reads the `name` label, then a `/rename` name. A label item reads any key you
+choose, with a prefix and, when it's missing, either nothing or a text you set.
+
 | Option | What it changes |
 |---|---|
 | Density: Comfortable, Compact, Dense | Row and header heights, the icon size and every text size at once. Comfortable is Herdr's own. |
-| Rows: One line, Two lines, Auto | Two lines put the name on top and the detail, time and status under it. Auto does that only for a name that wouldn't fit, so it follows the sidebar's width. |
-| Title: Workspace, Session | Which name leads a row that names both (when grouped by status, or pinned): the workspace, or the session's title. |
-| Cards: Name, Detail, Time, Card, Border, Selected, Hover colors | Each part's color. An unset color follows the theme; Card and Border are off until you pick one. |
-| Status: Left, Right | Where the spinner, dot or "Needs you" badge sits. On the left it's the small form, before the icon. |
-| Name weight | Regular, Medium, Semibold or Bold. |
-| Corner radius, Side padding, Spacing | The cards' shape and spacing. |
-| Sizes, Other text (folded) | Row height, icon size, group header height; the text of agent names, group headers, the time since, the second line, the "Agents" title and the badge. The font stays the UI font. |
-| Show | The time since, group headers (Working, Pinned, …), agent icons, and the "Needs you" badge (off: a small !). |
+| Card: rows and items | The card designer above. |
+| Cards: Card, Border, Selected, Hover colors | An unset color follows the theme; Card and Border are off until you pick one. The text colors are on each item. |
+| Corner radius, Side padding, Spacing | The cards' shape and spacing, as number boxes. |
+| Sizes (folded) | Row height, group header height, the group headers' and the "Agents" title's text, the badge. |
+| Show | Group headers (Working, Pinned, …). Time, icons and the badge are items on the card. |
+
+Weights other than Regular need the full Geist family (or another UI font): the Geist bundled with
+Herdr draws every weight the same. Put Geist's static TTFs in `~/.config/herdr-app/fonts`; they
+load at the next start or look change. The Weight control says so when they're missing.
 
 Herdr's agents mod can't be edited. So once anything here differs from Herdr's look, your layout copy
 shows `mods/agents-studio` instead: a copy of Herdr's list, rebuilt from Herdr's current one on each
@@ -192,9 +244,10 @@ they apply at once.
 |---|---|
 | Auto-hide | Keeps the sidebar out of the way until you need it. Rest the pointer on it and it opens, the terminals making room; move well past it and it folds back a moment later. A sidebar you open with Herdr's own fold button stays open, and dragging its edge never fights you. |
 | Folds to: Minimal, Hidden | **Minimal** folds it to a 52px rail, room for each space's and agent's number and status dot. **Hidden** takes it away entirely; the window's left edge brings it back. |
-| Beside Settings | The palette icon in the sidebar footer that opens the Studio. |
+| Beside Settings | The palette icon in the sidebar footer that opens the Studio. It shows a dot when an update is ready. |
+| Updates | Your version and the latest release, **Check now**, **Update to v…**, **What's new**, and **Auto-update**. See [Updating](#updating). |
 
-Both need your own copy of the layout, like Glass. Auto-hide is the sidebar folded (or hidden)
+Auto-hide and the icon need your own copy of the layout, like Glass; Updates don't. Auto-hide is the sidebar folded (or hidden)
 in the layout, plus an empty floating block from the Studio that watches the pointer; turning it
 off takes both away. Herdr can't put its sidebar in a slide-over drawer (a mod can't hold another
 mod's views), so it opens in place.
@@ -233,12 +286,12 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
 with the Studio open:
 
-Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|theme|close` ·
-settings: `autohide=rail|hidden|off` · `button=on|off` ·
+Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close` · `hover=<name>` (show a card's actions) ·
+settings: `autohide=rail|hidden|off` · `button=on|off` · `update=check|install` · `autoupdate=on|off` ·
 editor: `tab=<colors|type|glass|agents>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
-`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
+`cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
 ## Checks

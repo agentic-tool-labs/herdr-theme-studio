@@ -46,6 +46,13 @@ Two levels: the **theme library** (with an **import** panel and a **Settings** p
   unsaved changes. Then the selected color's editor, pinned, then the tab's sections, scrolling.
 - **Bar** along the bottom, 52px, a 1px `border` line above: a 7px status dot and one line of
   text on the left, the buttons that act on it on the right (primary `accent`, ghost, or plain).
+  The editor and Settings always have it. The library has none, so its list runs to the bottom;
+  the bar comes up there only to ask (Duplicate's name, Delete's confirm, Undo all), while the
+  Studio is busy, or for 8 s after a message.
+- **Update banner**, 38px, under the header when a newer release is out (or the last install
+  failed): an `accent` dot, "Theme Studio v<latest> is available. You have v<installed>." on a 12%
+  `accent` wash, then **What's new** (opens the release page) and **Update** (primary; "Installing
+  v…" while it runs; **Try again** after a failure).
 
 Parts:
 
@@ -79,13 +86,17 @@ Views:
   themes (files the Studio wrote or imported), Herdr's and others (the rest of `themes()`, minus
   themes named like a layout), Bundled presets (not yet installed). Cards are 176px little
   windows, radius 10: a 76px picture of the theme (a sidebar, lines in its text colors, six ANSI
-  bars) over a caption with the name and Dark/Light, or "● In use". The picked card has an
-  `accent` border. The bar: "Previewing <name>. Nothing's changed yet." or "<name> is in use",
-  then **Cancel** (when previewing), ⋯ (Duplicate…, Copy JSON, Delete…), **Edit** or **Edit a
-  copy** (not yours), **Use it** (when previewing). Duplicate swaps the bar for a name input with
-  Cancel and Copy; Delete for "Delete <name>? Its file in themes/ goes too." with Keep it and
-  Delete. The header's ⋯: Import a theme…, Show the themes folder, Undo all Theme Studio
-  changes… (once a backup exists; the bar then asks before it runs).
+  bars) over a 32px caption with the name and Dark/Light, or "● In use". The picked card has an
+  `accent` border; while it's previewing (not the theme in use) its caption ends in **✓ Apply**, a
+  22px `accent` pill. Under the pointer, a 34px `popover` strip with a `border` line above covers
+  the bottom of the picture, holding 24px buttons (radius 6, `raised`, a 1px `input` border that
+  turns `accent` under the pointer, a 13px `foreground` icon, a tooltip each), right-aligned:
+  Edit (pen; "Edit a copy" when not yours), Duplicate… (copy), Copy JSON (code), and, for your own
+  theme when it's not in use, Delete… (trash, `blocked`). A button acts on its own card's theme and
+  doesn't pick the card; Duplicate and Delete pick it, then ask in the bar: a name input with
+  Cancel and Copy, or "Delete <name>? Its file in themes/ goes too." with Keep it and Delete. The
+  header's ⋯: Import a theme…, Show the themes folder, Undo all Theme Studio changes… (once a
+  backup exists; the bar then asks before it runs).
 - **Import**, a panel at the top of the library: a textarea that also takes a dropped file, a
   name input, **From clipboard**, **Import**, and the `.itermcolors` files found in Downloads and
   on the Desktop as chips. An import lands in Your themes, picked but not used.
@@ -110,16 +121,52 @@ Views:
   (Sidebar and bar 0.2–1, Terminal 0.3–1; their color is always the theme's chrome and terminal
   color); Pane frames (Corner radius 0–20, Margin 0–32, Gap 0–24); and a hint that true window
   transparency is herdr-app#190.
-- **Agents**: Layout (Density, Rows, Title, Status segs), Cards (Name, Detail, Time, Card, Border,
-  Selected, Hover chips; Name weight; Corner radius, Side padding, Spacing), and folded Sizes and
-  Other text sliders, then Show toggles.
-- **Settings**: Sidebar (Auto-hide toggle; when on, Folds to: Minimal / Hidden) and Palette icon
-  (Beside Settings toggle). On Herdr's own layouts, the same make-a-copy card as Glass. The bar:
+- **Agents**: the canvas narrows to 290px, "Preview: the sidebar's agents", the mock window
+  showing only its sidebar's agents list. On a personal layout the inspector takes the rest of the
+  width and a 300px column joins it on the right (a 1px `border` line left of it): the pinned
+  color editor, then SELECTED with the chosen item's, row's or label's settings, scrolling on
+  its own. Sections: Layout (Density seg; Start from, a stacked seg One line / Two lines / Wraps /
+  Named), Card (the designer), Cards (Card, Border, Selected, Hover chips; Corner radius, Side
+  padding, Spacing as number boxes), folded Sizes (number boxes), Show (Group headers).
+  Number boxes are gpui-base `NumberInput`s, 96×28, radius 7, with styled − and + buttons,
+  clamped to the slider ranges they replaced (text sizes step 0.5, 6–28).
+- **Card designer**: the palette, then the card.
+  - Chips are 24px, radius 6, 11.5px text, `raised` with a 1px `border` line (`accent` under the
+    pointer; the selected one `accent` on `selected`; label items `accent` text). The palette's
+    source chips add `shadow_sm`, a 10px `dim` "⠿" grip and a grab cursor: Status, Icon, Name,
+    Title, Space, Time, Machine, one per label, then a dashed **+ Label item**. A grown item reads
+    "Name ↔". An 11px `dim` caption: "Drag one onto a row below"; while dragging a placed item, the
+    palette gets a dashed `accent` outline and "Drop here to take it off the card".
+  - The card sits in a frame (1px `input` border on `raised`, radius max(8, card radius + 4),
+    16px top padding, 10px elsewhere) with a 10.5px semibold `muted` legend "ONE AGENT CARD" on
+    `popover` across its top line. Each row is a dashed well (36px min, radius 8, 5px padding, on
+    `canvas`; "Drop items here" when empty) of placed chips with a move cursor, a `dim` summary of
+    the row's flow, and **+ Row** at the bottom.
+  - Dragging: on_mouse_down on a chip starts it; the root's on_mouse_move tracks `local_position`;
+    a ghost chip (24px, `accent` border, `shadow_lg`) is the root's last child, so it paints over
+    everything, at the pointer less the grab offset. Over a row a 2×20px `accent` caret shows where it
+    lands (before or after the chip under the pointer, by its half; past the last chip, the end).
+    on_mouse_up drops it, or takes it off over the palette.
+  - SELECTED for an item: Text size (number box, Reset), Color (chip, picker as `item:<r>.<i>`,
+    Reset), Weight (stacked seg Regular / Medium / Semibold / Bold, Reset beside the label; when
+    unset it shows the role's weight; a note when the full Geist isn't in a fonts folder), Badge
+    (status), Grow, Truncate, Max width, Style (Auto / Name / Detail / Accent: the role whose look it starts from; not for pills), and a label item's
+    definition. For a row: Wrap, Justify (stacked), Gap (stacked), Under the name. For a label:
+    Label key, Shows as (Text / Pill), Prefix, Color (Accent, Working, Blocked, Dim), If missing
+    (Hide / Show text) and that text.
+- **Settings**: Sidebar (Auto-hide toggle; when on, Folds to: Minimal / Hidden), Palette icon
+  (Beside Settings toggle), and Updates: Version ("v<installed> · Up to date", "· v<latest> is
+  available" or "· Not checked yet"), an Auto-update toggle, then **Check now** ("Checking…"),
+  **Update to v<latest>** (primary, when one is out) and **What's new**, with a hint "Last checked
+  <date>." plus any failure. On Herdr's own layouts, the same make-a-copy card as Glass, then
+  Updates. The bar:
   "Settings apply right away. They're yours, not a theme's: changing themes keeps them."
 
 On a personal layout with the icon: in the sidebar footer's Settings row, to the right of
 "Settings", a 26px square button, radius 6, `palette.svg` at 14px in `muted`, `hover`
-background and `foreground` under the pointer, the same as the sidebar header's buttons.
+background and `foreground` under the pointer, the same as the sidebar header's buttons. When an
+update is ready, a 7px `accent` dot sits at its top right (2px in) and its tooltip says "Theme
+Studio: v<latest> is ready to install".
 On the narrow sidebar rail (under 160px) it moves to its own 28px row under Settings, and the
 footer block grows by that row (`layout.resize`), shrinking back when the sidebar widens.
 
@@ -199,7 +246,9 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   script when that switch would close the window). Themes and layout copies stay.
 - **Commands**: `herdr-app do theme-studio.<command>` or `"theme-studio:<command>"` in
   keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>`,
-  `delete-theme=<name>`, `export=<name>`, `view=themes|import|settings`, `menu=more|theme|close`,
+  `delete-theme=<name>`, `export=<name>`, `view=themes|import|settings`, `menu=more|close`,
+  `hover=<name>` (a card's actions, for screenshots), `update=check|install`, `autoupdate=on|off`,
+  `card=one|two|auto|both`, `card-select=<row>.<i>|<row>`, `card-item=<key>:<value>`,
   `autohide=rail|hidden|off`, `back`, `save`, `discard`,
   `tab=colors|type|glass|agents`, `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
   `size=`, `stage=<key>:<value>`, `glass-color=<key>:<hex|>`, `pick=<tok:token|glass:key>`,
@@ -236,6 +285,34 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   picker (`pick=agent:<key>`); the mock list shows all of it.
   Herdr doesn't reload a mounted clone whose file changed, so when Save rewrites the clone while
   the layout uses it, the Studio sets Herdr's list for 1.2 s and then the clone again.
+  **The card designer** saves `card: { rows: [{ items, wrap, justify, gap, indent }] }`, each item
+  `{ kind: status|icon|name|title|space|time|machine|label, grow, truncate, max, badge, id, size,
+  color, weight }`, and `labels: [{ id, key, style: "text"|"pill", prefix, color, missing:
+  "hide"|"text", text }]`. With `card` null the old switches draw the row (`cardFrom` turns them
+  into the same model for Start from). One function, `studioDrawCard` in lib.js, draws a card from
+  it: the Studio's mock list calls it, and the clone gets its source (`toString()`) in the patch,
+  so the two can't drift. Its rules: the first text shown takes the name's role (size, color,
+  weight) unless the item sets its own; Space hides under its own group header; a text already
+  shown is skipped; when row 0 has no text the first later one moves up; Grow is `flex_1`, or
+  `flex_auto` in a wrapping row. The clone reads labels from `terminals()[].labels` on each
+  render. The Name item is the `name` label, else the session's `/rename` name: Claude Code
+  writes `~/.claude/sessions/<pid>.json` with `name` and `nameSource: "user"`, and the clone maps
+  a session to its card through the `HC_TERMINAL_ID` in that process's environment (a `ps eww`
+  loop via `exec`, at most every 5 s).
+- **Updates**: `mod.json` carries `version`; a release is tagged `v<version>`. `studioUpdate`
+  (lib.js) asks `api.github.com/repos/agentic-tool-labs/herdr-theme-studio/releases/latest` with
+  `curl` at most every 6 hours (sooner on Check now) and keeps `{ installed, latest, checked, url,
+  notes, told, installing, failed }` in shared `theme-studio.update`. It runs in the Studio on open
+  and, as source in the footer patch (v4), 5 s after the footer mounts and every 30 minutes, so the
+  dot and the notice come while the Studio is closed. A newer `latest` posts `notify()` once per
+  version (`told`), with an action that opens the Studio. Installing runs one `sh` script: the
+  tag's tarball from codeload.github.com into a temp folder, its `mods/theme-studio` checked by
+  `herdr-app check`, Herdr's `gpui-kit.d.ts` and `jsconfig.json` carried over, then the old folder
+  moved aside and the new one moved in (moved back if that fails). Success and failure both
+  notify. `theme-studio.autoupdate` installs without a click, except while shared
+  `theme-studio.editing` (the Studio has unsaved changes) is true. `installing` holds for 120 s so
+  the Studio and the footer don't both install. On the next open after an update the Studio
+  rebuilds the footer clone and remounts it, so the dot's code updates too.
 - **Image background**: Herdr gives mods no file dialog, so **Choose…** runs
   `osascript -e 'POSIX path of (choose file of type {"public.image"} ...)'` (cancel returns nothing).
   The row also takes a dropped file. Layouts read pictures only inside Herdr's folder, so a

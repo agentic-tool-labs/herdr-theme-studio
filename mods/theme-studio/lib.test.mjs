@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -223,7 +223,9 @@ if (existsSync(shippedAgents)) {
   const pa = patchAgents(readFileSync(shippedAgents, "utf8"));
   assert.ok(pa && pa.includes("function studioAgents()") && pa.includes(".h(studioAgents().row)"), "the shipped agents mod patches");
   assert.ok(pa.includes("[name, studioMore] = [studioMore, name]") && pa.includes("\\u00b7 ${studioMore}"), "the session can lead on both layouts");
-  assert.ok(["studioCard)", "studioWeight)", "selectedColor ||", "detailColor ||", "studioLeft(this.status(t, a, true))"].every((k) => pa.split(k).length === 3), "cards and the status side reach both layouts");
+  assert.ok(["studioCard)", "studioWeight)", "selectedColor ||", "detailColor ||", "studioLeft(this.status(t, a, true))"].every((k) => pa.split(k).length >= 3), "cards and the status side reach both layouts");
+  assert.ok(pa.includes("studioName(a.address)") && pa.includes("function studioName(") && pa.includes('import { exec as studioExec } from "herdr";'), "a session's /rename name can show");
+  assert.ok(pa.includes(".when(Boolean(studioMore), el =>"), "a detail shows under a space header too");
   assert.equal(patchAgents(pa), pa);
 }
 assert.equal(patchAgents('import { shared } from "herdr";\nnothing to patch'), null, "a changed agents mod is refused");
@@ -254,3 +256,73 @@ assert.deepEqual(ahGone.children[0].size, { px: 240 }, "hidden keeps its open wi
 assert.equal(autoHideMode(ahGone), "hidden");
 assert.equal(ahGone.floating.length, 2, "switching mode keeps one watcher");
 console.log("lib.test: auto-hide passed");
+
+// card designer: a fake gpui that keeps each row's texts, so a card can be read back
+// Proxies return themselves: bind p per element.
+function node() { const o = { kids: [], calls: [] }; const pr = new Proxy(o, { get(t, k) {
+  if (k === "kids" || k === "calls") return t[k];
+  if (k === "child") return (c) => (t.kids.push(c), pr);
+  if (k === "children") return (cs) => (t.kids.push(...cs), pr);
+  if (k === "when") return (c, f) => (c ? f(pr) : pr);
+  return (...args) => (t.calls.push([k, ...args]), pr);
+} }); return pr; }
+const fake = { div: node, h_flex: node, v_flex: node };
+const texts = (n) => typeof n === "string" ? [n] : n && n.kids ? n.kids.flatMap(texts) : [];
+const rowsOf = (card, d, S) => studioDrawCard(card, d, { ...AGENTS_DEFAULT, ...S }, { foreground: "#ffffff", muted: "#999999", dim: "#777777", accent: "#7aa2f7" }, fake).kids.map(texts);
+const D = { title: "Herdr theming plugin design", space: "herdr-app-theming", name: () => "theme-studio", labels: { ticket: "HT-42" }, time: "3m",
+  status: (badge) => (badge ? "Needs you" : "!"), icon: () => "ICON", idle: false };
+assert.deepEqual(rowsOf(cardFrom({ ...AGENTS_DEFAULT }), D), [["ICON", "herdr-app-theming", "Herdr theming plugin design", "3m", "Needs you"]], "One line keeps today's order");
+assert.deepEqual(rowsOf(cardFrom({ ...AGENTS_DEFAULT, lines: "two", show: "both", statusSide: "left", badge: false }), { ...D, space: "" }),
+  [["!", "ICON", "theme-studio"], ["Herdr theming plugin design", "3m"]], "Name + title: the name leads, the title goes under it; the space hides under its header");
+assert.deepEqual(rowsOf(cardFrom({ ...AGENTS_DEFAULT, show: "name" }), { ...D, space: "", name: () => "" }), [["ICON", "Herdr theming plugin design", "3m", "Needs you"]], "no name: the title stands in");
+assert.deepEqual(rowsOf(cardFrom({ ...AGENTS_DEFAULT, show: "both" }), { ...D, space: "", name: () => "" }), [["ICON", "Herdr theming plugin design", "3m", "Needs you"]], "a text isn't said twice");
+const labelled = { rows: [{ items: [{ kind: "title" }, { kind: "label", id: "t" }, { kind: "label", id: "e" }] }] };
+const defs = [{ id: "t", key: "ticket", style: "pill", prefix: "#" }, { id: "e", key: "env", missing: "text", text: "local" }];
+assert.deepEqual(rowsOf(labelled, D, { labels: defs }), [["Herdr theming plugin design", "#HT-42", "local"]], "label items: prefix, and the text for a missing label");
+assert.deepEqual(rowsOf(labelled, { ...D, labels: {} }, { labels: [defs[0]] }), [["Herdr theming plugin design"]], "a missing label hides");
+assert.ok(rowsOf(cardFrom({ ...AGENTS_DEFAULT, lines: "auto" }), D) && cardFrom({ ...AGENTS_DEFAULT, lines: "auto" }).rows[0].wrap, "Wraps is one row that wraps");
+// an item's own size, color and weight win over its role's
+const findText = (n, txt) => n && n.kids ? (n.kids.includes(txt) ? n : n.kids.map((k) => findText(k, txt)).find(Boolean)) : null;
+const own = studioDrawCard({ rows: [{ items: [{ kind: "title", size: 15, color: "#ff0000", weight: "bold" }, { kind: "space" }] }] }, D, { ...AGENTS_DEFAULT }, { foreground: "#ffffff", muted: "#999999", dim: "#777777" }, fake);
+const tc = findText(own, D.title).calls, sc = findText(own, D.space).calls;
+assert.ok(tc.some((c) => c[0] === "text_size" && c[1] === 15) && tc.some((c) => c[0] === "text_color" && c[1] === "#ff0000") && tc.some((c) => c[0] === "font_bold"), "the item's own look");
+assert.ok(sc.some((c) => c[0] === "text_size" && c[1] === AGENTS_DEFAULT.detailText) && sc.some((c) => c[0] === "text_color" && c[1] === "#777777"), "unset: the role's look (detail)");
+console.log("lib.test: card designer passed");
+
+// updates: version order, the once-per-version notice, installs, and the wait while editing
+assert.ok(versionNewer("0.6.0", "0.5.9") && versionNewer("v0.10.0", "0.9.0") && !versionNewer("0.5.0", "v0.5.0") && !versionNewer(undefined, "0.1.0"));
+const host = (over = {}) => {
+  const store = { ...(over.store || {}) }, toasts = [], runs = [];
+  return { toasts, runs, store, shared: (k) => store[k], setShared: (k, v) => { store[k] = v; }, notify: (n) => toasts.push(n.title), home: "/h",
+    read: async () => JSON.stringify({ version: over.mine || "0.5.0" }),
+    exec: async (cmd, args) => { runs.push(cmd); return cmd === "curl" ? { code: 0, stdout: JSON.stringify({ tag_name: over.tag || "v0.6.0", html_url: "u" }) } : { code: over.fail ? 1 : 0, stdout: "", stderr: "boom" }; } };
+};
+{
+  const h = host();
+  const r = await studioUpdate(h);
+  assert.ok(r.newer && h.toasts.length === 1 && /available/.test(h.toasts[0]) && !h.runs.includes("sh"), "a newer release: one notice, no install");
+  await studioUpdate(h);
+  assert.equal(h.toasts.length, 1, "the notice comes once per version, and the 6-hour wait skips the network");
+  assert.equal(h.runs.filter((x) => x === "curl").length, 1);
+  const i = await studioUpdate(h, { install: true });
+  assert.ok(i.updated === "0.6.0" && h.runs.includes("sh") && /updated to v0.6.0/.test(h.toasts.at(-1)), "an install posts its toast");
+}
+{
+  const h = host({ store: { "theme-studio.autoupdate": true, "theme-studio.editing": true } });
+  await studioUpdate(h);
+  assert.ok(!h.runs.includes("sh"), "auto-update waits while the Studio has unsaved changes");
+  h.store["theme-studio.editing"] = false;
+  await studioUpdate(h, { force: true });
+  assert.ok(h.runs.includes("sh") && /updated/.test(h.toasts.at(-1)), "then installs by itself");
+}
+{
+  const h = host({ fail: true });
+  const r = await studioUpdate(h, { install: true });
+  assert.ok(r.failed === "boom" && /couldn't update/.test(h.toasts.at(-1)), "a failed install says why");
+}
+{
+  const h = host({ tag: "v0.5.0" });
+  const r = await studioUpdate(h);
+  assert.ok(!r.newer && h.toasts.length === 0, "up to date: quiet");
+}
+console.log("lib.test: updates passed");
