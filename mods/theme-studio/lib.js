@@ -391,7 +391,12 @@ mv "$dest" "$tmp/old" && mv "$src" "$dest" || { [ -d "$tmp/old" ] && [ ! -d "$de
     if (r.code === 0) {
       next = { ...next, installed: next.latest, installing: 0, failed: "", told: next.latest };
       h.setShared(KEY, next);
-      h.notify({ title: `Theme Studio updated to v${next.latest}`, body: `Was v${mine}. Open the Studio to see it.`, level: "success", action: open });
+      // An open Studio keeps running the old files until it's closed, so it's closed and opened
+      // again, by a shell that outlives the Studio (mod.open toggles it). Only when it's open.
+      const reopen = `sleep 0.5; herdr-app status 2>/dev/null | tr -d ' \\n' | grep -q '"overlays":\\[[^]]*"theme-studio"' || exit 0
+herdr-app do mod.open '{"name":"theme-studio"}'; sleep 1.5; herdr-app do mod.open '{"name":"theme-studio"}'`;
+      await h.exec("sh", ["-c", `(${reopen}) >/dev/null 2>&1 </dev/null &`]).catch(() => {});
+      h.notify({ title: `Theme Studio updated to v${next.latest}`, body: `Was v${mine}. An open Studio reopens with it; if yours didn't, close and open it.`, level: "success", action: open });
       return { ...next, newer: false, updated: next.latest };
     }
     next = { ...next, installing: 0, failed: String(r.stderr || r.stdout || "the install failed").trim().split("\n").pop() };

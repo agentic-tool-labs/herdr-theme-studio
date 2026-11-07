@@ -40,7 +40,7 @@ From v0.6.1 the Studio updates itself. It checks the repo's latest
 6 hours from the palette icon while it's closed. A newer one shows three ways: a dot on the palette
 icon, a banner across the top of the Studio with **What's new** and **Update**, and a Herdr notice
 (once per version; clicking it opens the Studio). **Update** downloads the release, has Herdr check
-it, and swaps it in for `mods/theme-studio/`; Herdr reloads the Studio from the new files, and a
+it, and swaps it in for `mods/theme-studio/`; an open Studio closes and opens again on the new files, and a
 notice says it's done (or why it couldn't). [Settings](#settings) has **Check now** and an
 **Auto-update** switch, which installs a release as soon as it's found but never while you have
 unsaved changes.

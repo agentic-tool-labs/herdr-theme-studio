@@ -315,7 +315,10 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   notify. `theme-studio.autoupdate` installs without a click, except while shared
   `theme-studio.editing` (the Studio has unsaved changes) is true. `installing` holds for 120 s so
   the Studio and the footer don't both install. On the next open after an update the Studio
-  rebuilds the footer clone and remounts it, so the dot's code updates too.
+  rebuilds the footer clone and remounts it, so the dot's code updates too. An open Studio keeps
+  running the old files, so after a successful install a detached `sh` (it outlives the Studio)
+  waits 0.5 s, checks `herdr-app status` lists `theme-studio` among `overlays`, and if so runs
+  `mod.open` twice, 1.5 s apart: closed, then opened on the new files.
 - **Image background**: Herdr gives mods no file dialog, so **Choose…** runs
   `osascript -e 'POSIX path of (choose file of type {"public.image"} ...)'` (cancel returns nothing).
   The row also takes a dropped file. Layouts read pictures only inside Herdr's folder, so a

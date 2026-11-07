@@ -1789,7 +1789,7 @@ export default class ThemeStudio extends View {
     return { ...u, ready: versionNewer(u.latest, u.installed) };
   }
   // A check (force: past the 6-hour wait) or an install. Installing replaces this folder, and
-  // Herdr reloads the Studio from the new files.
+  // studioUpdate then closes and reopens the Studio, which otherwise keeps running the old files.
   checkUpdate(cx, o = {}) {
     if (this.updating) return;
     this.updating = o.install ? "install" : o.force ? "check" : null;
