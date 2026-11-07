@@ -1040,15 +1040,17 @@ export default class ThemeStudio extends View {
       ? { colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx) }[this.tab]()
       : this.view === "settings" ? this.settingsView(t) : this.libraryView(t, s, cx);
     const pinned = edit ? this.pinnedEditor(t) : null;
+    // A press nothing stops drags the window (Herdr's overlay windows), so the header and the bar
+    // move it; their buttons, inputs and the breadcrumb stop their own presses.
     return v_flex().id("root").size_full().bg(t.popover).text_color(t.foreground).text_size(13)
-      .child(stop(this.header(t, s, overlay)))
+      .child(this.header(t, s, overlay))
       .child(h_flex().flex_1().min_h(0).border_t_1().border_color(t.border)
         .child(this.canvas(t, s))
         .child(stop(v_flex().w(400).flex_none().h_full().min_h(0)
           .when(edit, (el) => el.child(this.tabBar(t)))
           .when(!!pinned, (el) => el.child(pinned))
           .child(v_flex().id("body").flex_1().min_h(0).overflow_y_scrollbar().px(14).pt(14).pb(20).gap(22).child(panel)))))
-      .child(stop(this.footer(t, cx)));
+      .child(this.footer(t, cx));
   }
 
   // Back from the editor asks first (in the bottom bar) when there's something unsaved.
@@ -1074,13 +1076,13 @@ export default class ThemeStudio extends View {
       ? h_flex().gap(4).items_center().min_w(0)
         .child(this.iconButton("back", "back", "Back to the themes", t, (_e, cx) => this.goTo("themes", cx)))
         .child(v_flex().min_w(0)
-          .child(div().id("crumb").text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.goTo("themes", cx)).child("Theme Studio ›"))
+          .child(div().id("crumb").on_mouse_down("left", (_e, cx) => cx.stop_propagation()).text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.goTo("themes", cx)).child("Theme Studio ›"))
           .child(div().text_size(13.5).font_semibold().child("Settings")))
       : edit
       ? h_flex().gap(4).items_center().min_w(0)
         .child(this.iconButton("back", "back", "Back to the themes", t, (_e, cx) => this.back(cx)))
         .child(v_flex().min_w(0)
-          .child(div().id("crumb").text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.back(cx)).child("Themes ›"))
+          .child(div().id("crumb").on_mouse_down("left", (_e, cx) => cx.stop_propagation()).text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.back(cx)).child("Themes ›"))
           .child(h_flex().gap(6).items_center().min_w(0)
             .child(div().text_size(13.5).font_semibold().truncate().child(this.editing))
             .when(!own, (el) => el.child(div().flex_none().px(5).rounded(5).border_1().border_color(t.border).text_size(10.5).text_color(t.dim).child("Herdr's")))))
@@ -1170,7 +1172,7 @@ export default class ThemeStudio extends View {
     const name = this.selected(), mine = this.isOwn(name), staged = !!this.themeDraft;
     if (ask && ask.kind === "copy") return bar(h_flex().flex_1().min_w(0).gap(8).items_center()
         .child(div().flex_none().text_size(12).text_color(t.muted).child(`Copy ${ask.from} as`))
-        .child(Input.new(this.copyName).flex_1().h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground)),
+        .child(div().flex_1().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.copyName).w_full().h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))),
       this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
       this.button("copy-go", "Copy", t, (_e, cx) => this.copyTheme(ask.from, this.copyName.value(), cx), true));
     if (ask && ask.kind === "delete") return bar(note(`Delete ${name}? Its file in themes/ goes too.`, t.blocked, t.foreground),
