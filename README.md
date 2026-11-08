@@ -197,7 +197,7 @@ own copy of the layout (`<layout>-studio`). The same panes, before and after:
 
 #### Agents
 
-![Agents tab, Compact with cards](docs/screenshots/agents.png)
+![Agents tab, Dense with cards](docs/screenshots/agents.png)
 
 The sidebar's agents list. Herdr's own (left) and one with Compact density, cards, status on the left and
 no icons (right):
