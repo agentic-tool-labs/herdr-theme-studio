@@ -369,3 +369,26 @@ console.log("lib.test: updates passed");
   assert.ok(parsePart("{}").error && parsePart("nope").error);
 }
 console.log("lib.test: parts passed");
+
+// --- sharing themes
+{
+  const { githubLink, githubEntries, cleanStudio, studioExtras, joinPath, isThemeFile, manifestThemes, browsable } = await import("./lib.js");
+  const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`); };
+  eq(githubLink("https://github.com/o/r/blob/main/ghostty/Dracula%2B"), { kind: "file", raw: "https://raw.githubusercontent.com/o/r/main/ghostty/Dracula%2B", name: "Dracula+" }, "blob");
+  eq(githubLink("github.com/o/r/tree/main/ghostty").api, "https://api.github.com/repos/o/r/contents/ghostty?ref=main", "tree");
+  eq(githubLink("https://github.com/o/r.git").api, "https://api.github.com/repos/o/r/contents/", "repo");
+  eq(githubLink("https://gist.github.com/me/abc123").api, "https://api.github.com/gists/abc123", "gist");
+  eq(githubLink("https://raw.githubusercontent.com/o/r/main/x.json?token=1").raw, "https://raw.githubusercontent.com/o/r/main/x.json", "raw");
+  eq(githubLink("https://example.com/x.json"), null, "not github");
+  eq(githubEntries([{ type: "file", name: "README.md", download_url: "u" }, { type: "file", name: "Nord", download_url: "n" }, { type: "dir", name: "kitty", url: "k" }, { type: "dir", name: ".github", url: "g" }]),
+    { dirs: [{ name: "kitty", api: "k" }], files: [{ name: "Nord", raw: "n" }] }, "folder");
+  eq(githubEntries({ files: { "a.json": { filename: "a.json", raw_url: "r" }, "b.png": { filename: "b.png", raw_url: "p" } } }).files, [{ name: "a.json", raw: "r" }], "gist files");
+  eq(cleanStudio({ glass: { bg: "image" }, agents: "x", evil: {}, preview: "p.png", meta: { author: "A", ios: 3, url: "u" } }), { glass: { bg: "image" }, preview: "p.png", meta: { author: "A", url: "u" } }, "clean");
+  eq(studioExtras({ cursor: { shape: "bar" }, meta: {} }).src, { type: "default", cursor: "own", glass: "default", agents: "default" }, "extras src");
+  eq(joinPath("mods/theme-studio/presets", "../backgrounds/a.jpg"), "mods/theme-studio/backgrounds/a.jpg", "join ..");
+  eq(joinPath("https://raw.githubusercontent.com/o/r/main", "./backgrounds/a.jpg"), "https://raw.githubusercontent.com/o/r/main/backgrounds/a.jpg", "join url");
+  eq([isThemeFile("LICENSE"), isThemeFile("x.itermcolors"), isThemeFile("shot.png")], [false, true, false], "theme files");
+  eq(manifestThemes({ format: 1, themes: ["a.json", "themes/b.json", "../x.json", "/etc/y.json", "c.png", 3] }), ["a.json", "themes/b.json"], "manifest");
+  eq([browsable({ preview: "p.png", meta: { description: "d", author: "a" } }), browsable({ preview: "p.png", meta: { description: "d" } }), browsable({ meta: { description: "d", author: "a" } })], [true, false, false], "browsable");
+  console.log("lib.test: sharing passed");
+}

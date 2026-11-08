@@ -25,6 +25,7 @@
     "canvas": "#09250d"
   },
   "studio": {
+    "format": 1,
     "type": {
       "font": "MesloLGS Nerd Font Mono",
       "font_size": 11,

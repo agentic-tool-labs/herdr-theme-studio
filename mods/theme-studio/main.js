@@ -5,11 +5,15 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
-import { theme, themes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
+import { theme, themes as herdrThemes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable } from "./lib.js";
 
 const HOME = appHome();
+// Herdr's themes() costs about a millisecond a call, and drawing the library asks for it per card;
+// within a few milliseconds the answer can't have changed. ponytail: a 30 ms memo, not an invalidation scheme.
+let themesAt = 0, themesMemo = null;
+const themes = () => { const now = Date.now(); if (!themesMemo || now - themesAt > 30) { themesMemo = herdrThemes(); themesAt = now; } return themesMemo; };
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
 const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults" };
@@ -43,6 +47,7 @@ const META = [["description", "Description"], ["author", "Author"], ["url", "URL
 // Each: the details key, its name, its badge file and the host its link must be on.
 const STORES = [["ios", "App Store", "app-store", "apps.apple.com"], ["android", "Google Play", "google-play", "play.google.com"], ["macos", "Mac App Store", "mac-app-store", "apps.apple.com"]];
 const BRAND = "theme-studio.brand";
+const TOPIC = "herdr-mod-theme-studio"; // the GitHub topic published themes carry, for Browse
 const WELCOMED = "theme-studio.welcomed"; // branded themes whose welcome has been shown
 const isWeb = (u) => /^https:\/\/\S+$/i.test(u || "");
 // svg() paths are relative to the app home.
@@ -127,6 +132,8 @@ export default class ThemeStudio extends View {
     this.busy = false;
     this.presets = [];
     this.found = [];
+    this.gh = null; // a GitHub listing in the import panel: { title, busy, dirs, files }
+    this.browse = null; // the Browse window: { busy, themes, hidden }
     this.draft = {}; // Type picks not yet applied, in settings.json names
     this.colorDraft = {}; // theme tokens not yet applied: hex, or null to reset
     this.cursorDraft = {}; // cursor shape and blink not yet applied
@@ -158,6 +165,12 @@ export default class ThemeStudio extends View {
     for (const s of Object.values(this.metaIn)) s.on("change", (_e, cx) => cx.notify()); // the Details tab's dot and Save
     this.importText = TextareaState.new({ placeholder: "Paste or drop an iTerm2, Ghostty, kitty, Alacritty or Herdr theme", rows: 7 });
     this.importName = InputState.new({ placeholder: "Theme name" });
+    this.ghLink = InputState.new({ placeholder: "GitHub link: a theme file, a folder, a repo or a gist" });
+    this.ghLink.on("submit", (_e, cx) => this.importGithub(this.ghLink.value(), cx));
+    this.ghFilter = InputState.new({ placeholder: "Filter" });
+    this.ghFilter.on("change", (_e, cx) => cx.notify());
+    this.browseFilter = InputState.new({ placeholder: "Filter by name, author or words" });
+    this.browseFilter.on("change", (_e, cx) => cx.notify());
     this.imagePath = InputState.new({ placeholder: "backgrounds/my-picture.jpg (in ~/.config/herdr-app)" });
     this.imagePath.on("submit", (_e, cx) => this.useImage(this.imagePath.value().trim(), cx));
     this.copyName = InputState.new({ placeholder: "Name for the copy" });
@@ -179,7 +192,7 @@ export default class ThemeStudio extends View {
       this.labelIn[k] = st;
     }
     this.copyName.on("change", (_e, cx) => cx.notify()); // the ask bar says when a name is taken
-    this.copyName.on("submit", (_e, cx) => this.ask && this.ask.kind === "rename" ? this.renameTheme(this.ask.from, this.copyName.value(), cx)
+    this.copyName.on("submit", (_e, cx) => this.ask && this.ask.kind === "install" ? this.installRemote(cx) : this.ask && this.ask.kind === "rename" ? this.renameTheme(this.ask.from, this.copyName.value(), cx)
       : this.copyTheme(this.ask && this.ask.from, this.copyName.value(), cx, this.ask && this.ask.edit));
 
     this.glass = { ...GLASS_DEFAULT }; // what the layout has
@@ -234,7 +247,13 @@ export default class ThemeStudio extends View {
       for (const f of files) {
         // A preset's `studio` block (its parts and details) never reaches the theme file: Herdr skips a
         // theme file with fields it doesn't know.
-        try { const { studio, ...file } = JSON.parse(await fs.readFile(`${MOD}/presets/${f}`, "utf8")); this.presets.push({ name: f.slice(0, -5), file, studio: studio || null }); } catch {}
+        // Its picture's path is relative to the preset, as in any published theme.
+        try {
+          const { studio, ...file } = JSON.parse(await fs.readFile(`${MOD}/presets/${f}`, "utf8")), s = cleanStudio(studio);
+          if (!file.background || !Array.isArray(file.ansi)) continue; // not a theme (a herdr-themes.json, say)
+          if (s && s.glass && s.glass.image) s.glass = { ...s.glass, image: joinPath(`${MOD_REL}/presets`, s.glass.image) };
+          this.presets.push({ name: f.slice(0, -5), file, studio: s });
+        } catch {}
       }
       cx.notify();
       await this.scanThemeFiles(cx);
@@ -313,6 +332,15 @@ export default class ThemeStudio extends View {
     else if (verb === "revert") this.revert(cx);
     else if (verb === "import") this.importTheme(cx, cx.read_from_clipboard() || "", arg);
     else if (verb === "import-file") this.importFile(arg, cx);
+    else if (verb === "github") { this.importing = true; this.importGithub(arg, cx); } // github=<link>: import a file, or list a folder, repo or gist
+    else if (verb === "remote") arg === "install" ? this.installRemote(cx) : this.cancelRemote(cx); // remote=install|cancel: the GitHub theme in preview
+    else if (verb === "import-name") this.importName.set_value(arg); // the name the next import takes
+    else if (verb === "github-browse") arg === "close" ? (this.browse = null) : this.browseGithub(cx); // github-browse[=close]: the Browse window
+    else if (verb === "github-pick") { // a theme in Browse, or a file or folder in the import panel's listing, by name
+      const b = this.browse && this.browse.themes.find((x) => x.name === arg), g = this.gh || { dirs: [], files: [] };
+      const d = g.dirs.find((x) => x.name === arg), f = g.files.find((x) => x.name === arg);
+      if (b) this.pickBrowsed(b, cx); else if (f) this.importRaw(f.raw, f.name, cx); else if (d) this.listGithub(d.api, `${g.title}/${d.name}`, cx);
+    }
     else if (verb === "behind") this.stageGlass({ behind: arg }, cx);
     else if (verb === "agents" && AGENT_PRESETS[arg]) this.stageAgents({ ...AGENT_PRESETS[arg] }, cx);
     else if (verb === "card" && CARD_STARTS.some(([id]) => id === arg)) this.startCard(arg, cx);
@@ -527,9 +555,7 @@ export default class ThemeStudio extends View {
   presetExtras(name) {
     const p = this.presets.find((x) => x.name === name && x.studio);
     if (!p) return null;
-    const s = p.studio, ex = { src: Object.fromEntries(PARTS.map((q) => [q, s[q] ? "own" : "default"])), meta: s.meta || {} };
-    for (const q of PARTS) if (s[q]) ex[q] = s[q];
-    return ex;
+    return studioExtras(p.studio);
   }
   // Yours, else a bundled preset's.
   extrasAny(name) { return extrasOf(name) || this.presetExtras(name); }
@@ -537,7 +563,9 @@ export default class ThemeStudio extends View {
   partCtx(over) {
     const all = { ...Object.fromEntries(this.presets.filter((p) => p.studio).map((p) => [p.name, this.presetExtras(p.name)])), ...(shared(K.themes) || {}) };
     if (over) { const ex = all[over.name] || {}; all[over.name] = { ...ex, src: { ...(ex.src || {}), [over.part]: over.src } }; }
-    return { all, defaults: shared(K.defaults) || {}, light: (n) => this.isLight(n) };
+    // themes() costs about a millisecond a call, so one read serves the whole walk.
+    const th = new Map(themes().map((x) => [x.name, !!x.light]));
+    return { all, defaults: shared(K.defaults) || {}, light: (n) => (th.has(n) ? th.get(n) : this.isLight(n)) };
   }
   partValue(name, part, src) { return resolvePart(this.partCtx(src && { name, part, src }), name, part).value; }
   // A part's values filled out with Herdr's for what it doesn't set.
@@ -1114,21 +1142,205 @@ export default class ThemeStudio extends View {
   }
 
   // --- library ---------------------------------------------------------------
-  importTheme(cx, text, givenName) {
+  // `from`: where the text came from ({ dir, local }), so a published theme's picture can follow it.
+  importTheme(cx, text, givenName, from) {
     const raw = String(text ?? this.importText.value()).trim();
+    if (!raw.includes("\n") && githubLink(raw)) return this.importGithub(raw, cx);
     // Finder's Copy puts a file's path on the clipboard, not its contents.
     if (!raw.includes("\n") && /^(\/|~\/).+\.[a-z]+$/i.test(raw)) return this.importFile(raw, cx);
     cx.spawn((cx) => this.guard(cx, "Importing", async () => {
-      const file = parseTheme(text ?? this.importText.value());
+      // A published theme's "studio" block (its parts and details) never goes in the theme file.
+      const { studio, ...file } = parseTheme(raw);
       const name = slug(givenName || this.importName.value() || "imported");
       if (this.takenNames().has(name) || (await readTextFile(themePath(name)))) throw new Error(`A theme named ${name} already exists: pick another name`);
+      const s = cleanStudio(studio), ex = s && studioExtras(s);
+      let note = "";
+      if (ex && ex.glass) {
+        ex.glass = { ...ex.glass, bloom: "", frost: "" }; // rendered here
+        if (ex.glass.bg === "image") {
+          const pic = await this.fetchPicture(from, ex.glass.image).catch(() => null);
+          ex.glass = pic ? { ...ex.glass, image: pic } : { ...ex.glass, bg: "theme", image: "" };
+          if (!pic) note = ". Its picture wasn't found, so it has none";
+        }
+      }
       await this.writeThemeFile(name, file);
+      if (ex) setExtras(name, ex);
       await this.waitFor(cx, () => themes().some((t) => t.name === name));
       this.importText.set_value(""); this.importName.set_value("");
       this.view = "themes";
       this.stageTheme(name, cx);
-      this.say(`Imported ${name}: Apply to use it, or Edit it`, "success", cx);
+      this.welcome(name);
+      this.say(`Imported ${name}${ex ? " with its whole look" : ""}${note}: Apply to use it, or Edit it`, "success", cx);
     }));
+  }
+
+  // A published theme's picture, from beside its file (a folder here or on GitHub), into backgrounds/.
+  // `to`: a folder in Herdr's home (the mod's cache/ for a preview).
+  async fetchPicture(from, rel, to = "backgrounds") {
+    if (!from || !isPicture(rel)) return null;
+    const src = joinPath(from.dir, rel);
+    if (!from.local && !/^https:\/\/(raw|gist)\.githubusercontent\.com\//.test(src)) return null;
+    await fs.mkdir(`${HOME}/${to}`, { recursive: true }).catch(() => {});
+    let file = (() => { try { return decodeURIComponent(src.split("/").pop()); } catch { return src.split("/").pop(); } })().replace(/[^\w.-]+/g, "-");
+    if (to === "backgrounds" && (await fs.readdir(`${HOME}/${to}`).catch(() => [])).includes(file)) file = `${Date.now()}-${file}`; // the cache just overwrites
+    const dest = `${HOME}/${to}/${file}`;
+    const r = from.local ? await exec("cp", [src, dest]) : await exec("curl", ["-fsSL", "--max-time", "60", "-o", dest, src]);
+    return r && r.code === 0 ? `${to}/${file}` : null;
+  }
+
+  // A GitHub theme is previewed before it's installed: it joins the presets (hidden from the library)
+  // with its picture in cache/, gets picked, and the bar offers Install or Cancel.
+  previewRemote(cx, text, base, from) {
+    cx.spawn((cx) => this.guard(cx, "Getting its preview", async () => {
+      const { studio, ...file } = parseTheme(text), s = cleanStudio(studio);
+      if (s && s.glass) {
+        s.glass = { ...s.glass, bloom: "", frost: "" };
+        if (s.glass.bg === "image") {
+          const pic = await this.fetchPicture(from, s.glass.image, `${MOD_REL}/cache`).catch(() => null);
+          s.glass = pic ? { ...s.glass, image: pic } : { ...s.glass, bg: "theme", image: "" };
+        }
+      }
+      this.dropRemote();
+      const name = this.freeName(slug(this.importName.value().trim() || base));
+      this.presets.push({ name, file, studio: s, remote: { text, from } });
+      this.view = "themes";
+      this.stageTheme(name, cx);
+      this.ask = { kind: "install", name };
+      this.copyName.set_value(name);
+      this.say(`Previewing ${name}: Install keeps it`, "info", cx);
+    }));
+  }
+  dropRemote() { this.presets = this.presets.filter((p) => !p.remote); }
+  installRemote(cx) {
+    const r = this.presets.find((p) => p.remote);
+    if (!r) return;
+    const as = this.copyName.value().trim() || r.name;
+    this.dropRemote();
+    this.ask = null;
+    this.importTheme(cx, r.remote.text, as, r.remote.from);
+  }
+  cancelRemote(cx) {
+    this.dropRemote();
+    this.ask = null;
+    this.stageTheme(settings().theme, cx);
+  }
+
+  // --- GitHub: a file link imports; a folder, repo or gist lists its theme files; Browse finds
+  // repos with the topic. Everything goes through curl, like the update check.
+  async githubApi(url) {
+    const r = await exec("curl", ["-fsSL", "--max-time", "20", "-H", "Accept: application/vnd.github+json", url]).catch(() => null);
+    try { return r && r.code === 0 ? JSON.parse(r.stdout) : null; } catch { return null; }
+  }
+  importGithub(link, cx) {
+    const g = githubLink(link);
+    if (!g) return this.say("That isn't a GitHub link to a theme file, folder, repo or gist", "error", cx);
+    this.ghLink.set_value("");
+    if (g.kind === "file") return this.importRaw(g.raw, g.name, cx);
+    this.listGithub(g.api, g.title, cx);
+  }
+  importRaw(raw, fileName, cx) {
+    this.say(`Downloading ${fileName}…`, "info", cx);
+    cx.spawn(async (cx) => {
+      const sh = 'd=$(mktemp -d) && curl -fsSL --max-time 30 -o "$d/$2" "$1" && echo "$d/$2"';
+      const r = await exec("sh", ["-c", sh, "sh", raw, fileName.replace(/\//g, "-")]).catch(() => null);
+      const path = r && r.code === 0 && r.stdout.trim();
+      if (!path) return this.say(`Couldn't download ${fileName} from GitHub`, "error", cx);
+      const text = await this.readThemeText(path);
+      exec("rm", ["-rf", path.replace(/\/[^/]*$/, "")]).catch(() => {});
+      if (!text) return this.say(`Couldn't read ${fileName}`, "error", cx);
+      this.previewRemote(cx, text, fileName.replace(/\.[^.]+$/, ""), { dir: raw.replace(/\/[^/]*$/, ""), local: false });
+    });
+  }
+  listGithub(api, title, cx) {
+    this.gh = { title, busy: true, dirs: [], files: [] };
+    this.ghFilter.set_value("");
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const j = await this.githubApi(api);
+      if (!j) { this.gh = null; return this.say(`Couldn't open ${title} on GitHub (private, or GitHub's hourly limit)`, "error", cx); }
+      const e = githubEntries(j);
+      if (j.files && e.files.length === 1) { this.gh = null; cx.notify(); return this.importRaw(e.files[0].raw, e.files[0].name, cx); } // a one-file gist
+      this.gh = { title, ...e };
+      cx.notify();
+    });
+  }
+  // Browse: repos with the topic, each listing its themes in herdr-themes.json at its root. A theme
+  // shows only with a preview picture, a description and an author; its preview is cached in cache/.
+  // One search call; the rest comes from raw.githubusercontent.com, outside GitHub's API limit.
+  browseGithub(cx) {
+    this.browse = { busy: true, themes: [], hidden: 0 };
+    this.browseFilter.set_value("");
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const j = await this.githubApi(`https://api.github.com/search/repositories?q=topic:${TOPIC}&sort=stars&per_page=30`);
+      if (!j) { this.browse = null; return this.say("Couldn't reach GitHub to browse themes", "error", cx); }
+      const get = (url, out) => exec("curl", ["-fsSL", "--max-time", "30", ...(out ? ["-o", out] : []), url]).then((r) => r.code === 0 && (out || r.stdout)).catch(() => null);
+      const json = async (url) => { try { return JSON.parse(await get(url)); } catch { return null; } };
+      await fs.mkdir(`${MOD}/cache`, { recursive: true }).catch(() => {});
+      let hidden = 0;
+      const found = await Promise.all((j.items || []).map(async (r) => {
+        const base = `https://raw.githubusercontent.com/${r.full_name}/${r.default_branch || "main"}`;
+        const files = manifestThemes(await json(`${base}/herdr-themes.json`));
+        if (!files.length) { hidden++; return []; }
+        return Promise.all(files.map(async (f) => {
+          const raw = `${base}/${f}`, th = await json(raw), s = th && cleanStudio(th.studio);
+          const src = s && browsable(s) && joinPath(raw.replace(/\/[^/]*$/, ""), s.preview);
+          const pic = `${r.full_name}--${f}--${String(src).split("/").pop()}`.replace(/[^\w.-]+/g, "-");
+          if (!th || !th.background || !src || !src.startsWith(`${base}/`) || !(await get(src, `${MOD}/cache/${pic}`))) { hidden++; return null; }
+          const file = f.split("/").pop();
+          return { name: slug(file.replace(/\.json$/i, "")), file, raw, repo: r.full_name, stars: r.stargazers_count || 0, meta: s.meta, preview: `${MOD_REL}/cache/${pic}`,
+            light: contrast("#000000", th.background) > contrast("#ffffff", th.background) };
+        }));
+      }));
+      if (this.browse) this.browse = { themes: found.flat().filter(Boolean), hidden };
+      cx.notify();
+    });
+  }
+  // A theme picked in Browse: the window closes and the theme is previewed (or picked, once added).
+  pickBrowsed(x, cx) {
+    this.browse = null;
+    if (this.isAdded(x)) this.stageTheme(x.name, cx); else this.importRaw(x.raw, x.file, cx);
+    cx.notify();
+  }
+  isAdded(x) { return this.themeNames().includes(x.name) || this.presets.some((p) => !p.remote && p.name === x.name); }
+
+  // Browse: the themes published on GitHub, as cards, over the Studio. A press outside closes it.
+  browseDialog(t) {
+    const b = this.browse, q = this.browseFilter.value().trim().toLowerCase();
+    const list = b.themes.filter((x) => !q || `${x.name} ${x.meta.author} ${x.meta.description} ${x.repo}`.toLowerCase().includes(q));
+    const close = (_e, cx) => { this.browse = null; cx.notify(); };
+    const panel = v_flex().id("browse-dialog").w(620).h(560).rounded(14).bg(t.popover).border_1().border_color(t.border).shadow_xl().overflow_hidden()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(h_flex().px(22).pt(18).pb(12).gap(10).items_center()
+        .child(v_flex().flex_1().min_w(0)
+          .child(div().text_size(17).font_semibold().child("Themes on GitHub"))
+          .child(div().text_size(11.5).text_color(t.dim).child(b.busy ? "Looking…" : `${b.themes.length} from repos tagged ${TOPIC}. Pick one to preview it before installing.`)))
+        .child(Input.new(this.browseFilter).w(200).h(28).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+        .child(this.iconButton("browse-x", "close", "Close", t, close)))
+      .child(div().relative().flex_1().min_h(0).border_t_1().border_color(t.border)
+        .child(v_flex().id("browse-body").size_full().overflow_y_scroll().px(22).py(16).gap(14)
+          .when(list.length > 0, (el) => el.child(h_flex().flex_wrap().gap(12).children(list.map((x) => this.browseCard(t, x)))))
+          .when(!b.busy && !list.length, (el) => el.child(div().text_size(12.5).text_color(t.dim).child(q ? "No matches." : `No themes published yet: tag a repo ${TOPIC} to list yours.`)))
+          .when(!b.busy && !!b.hidden, (el) => el.child(div().text_size(11.5).text_color(t.dim).line_height("16px")
+            .child(`${b.hidden} more tagged ${b.hidden === 1 ? "repo or theme isn't" : "repos or themes aren't"} shown: Browse needs a herdr-themes.json and, for each theme, a preview, a description and an author.`))))
+        .child(Scrollbar.vertical("browse-body").absolute().inset_0()));
+    return div().absolute().inset_0().bg("#00000088").flex().items_center().justify_center()
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); close(e, cx); })
+      .child(panel);
+  }
+  // A theme in Browse: its preview, name, author and description. Click adds it (or picks it, once added).
+  browseCard(t, x) {
+    const have = this.isAdded(x), branded = STORES.some(([k]) => isWeb(x.meta[k]));
+    return v_flex().id(`ghc-${x.repo}-${x.name}`).w(176).rounded(10).overflow_hidden().cursor_pointer().border_1().border_color(t.border).bg(t.background)
+      .hover((st) => st.border_color(t.accent)).tooltip(`${x.meta.description}\n${x.repo} · ★ ${x.stars}`)
+      .on_click((_e, cx) => this.pickBrowsed(x, cx))
+      .child(div().w(176).h(110).bg(t.canvas).child(image(x.preview).size_full()))
+      .child(v_flex().p(8).gap(3).border_t_1().border_color(t.border)
+        .child(h_flex().gap(6).items_center()
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().child(x.name))
+          .child(div().flex_none().text_size(11).text_color(have ? t.done : t.dim).child(have ? "Added" : x.light ? "Light" : "Dark")))
+        .child(div().truncate().text_size(11.5).text_color(t.muted).child(`by ${x.meta.author}${branded ? " · Branded" : ""}`))
+        .child(div().h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.dim).child(x.meta.description)));
   }
 
   // iTerm2 saves .itermcolors as XML or as a binary plist; plutil (built into macOS) gives XML either way.
@@ -1156,7 +1368,7 @@ export default class ThemeStudio extends View {
     cx.spawn(async (cx) => {
       const text = await this.readThemeText(path);
       if (!text) return this.say("Couldn't read " + path, "error", cx);
-      this.importTheme(cx, text, this.importName.value().trim() || path.split("/").pop().replace(/\.[^.]+$/, ""));
+      this.importTheme(cx, text, this.importName.value().trim() || path.split("/").pop().replace(/\.[^.]+$/, ""), { dir: path.replace(/\/[^/]*$/, ""), local: true });
     });
   }
 
@@ -1362,6 +1574,7 @@ export default class ThemeStudio extends View {
             .when(!!side, (el) => el.child(side))))))
       .when(!!foot, (el) => el.child(foot))
       .when(this.bloomOpen, (el) => el.child(this.bloomDialog(t)))
+      .when(!!this.browse && !this.part, (el) => el.child(this.browseDialog(t)))
       .when(!!this.infoFor && !this.part, (el) => el.child(this.infoDialog(t)))
       // Last, so it paints over everything else.
       .when(Boolean(this.drag && this.mouse), (el) => el.child(this.dragGhost(t)));
@@ -1508,6 +1721,15 @@ export default class ThemeStudio extends View {
         .when(!!clash, (el) => el.child(div().flex_none().text_size(11.5).text_color(ren ? t.blocked : t.muted).child(clash))),
       this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
       this.button(ren ? "rename-go" : "copy-go", ren ? "Rename" : "Copy", t, (_e, cx) => ren ? this.renameTheme(ask.from, this.copyName.value(), cx) : this.copyTheme(ask.from, this.copyName.value(), cx), true)); }
+    if (ask && ask.kind === "install") {
+      const typed = slug(this.copyName.value() || ""), clash = typed && typed !== ask.name && this.takenNames().has(typed) ? `${typed} is taken` : null;
+      return bar(h_flex().flex_1().min_w(0).gap(8).items_center()
+        .child(div().flex_none().text_size(12).text_color(t.muted).child("From GitHub: install as"))
+        .child(div().flex_1().min_w(0).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.copyName).w_full().h(30).px(8).rounded(7).border_1().border_color(clash ? t.blocked : t.input).bg(t.background).text_color(t.foreground)))
+        .when(!!clash, (el) => el.child(div().flex_none().text_size(11.5).text_color(t.blocked).child(clash))),
+      this.metaOf(ask.name) && this.button("remote-info", "Details", t, (_e, cx) => { this.infoFor = { name: ask.name, welcome: true }; cx.notify(); }, "ghost"),
+      this.button("remote-cancel", "Cancel", t, (_e, cx) => this.cancelRemote(cx), "ghost"),
+      this.button("remote-install", "Install", t, (_e, cx) => this.installRemote(cx), true)); }
     if (ask && ask.kind === "delete") {
       const uses = [...new Set(dependents(this.partCtx(), name, this.themeNames()).map(([n]) => n))];
       return bar(note(`Delete ${name}? Its file in themes/ goes too.${uses.length ? ` ${uses.join(", ")} ${uses.length > 1 ? "take parts" : "takes a part"} from it and keep${uses.length > 1 ? "" : "s"} a copy.` : ""}`, t.blocked, t.foreground),
@@ -1601,9 +1823,9 @@ export default class ThemeStudio extends View {
     const q = this.themeQuery.trim().toLowerCase(), f = this.themeFilter;
     const base = this.bases = this.baseThemes();
     const shows = (x) => (!q || x.name.toLowerCase().includes(q)) && (f === "all" || (f === "base" ? base.has(x.name) : f === "branded" ? this.isBranded(x.name) : (f === "light") === !!x.light));
-    const pick = (name) => (_e, cx) => { this.ask = null; this.stageTheme(name, cx); this.welcome(name); };
+    const pick = (name) => (_e, cx) => { this.ask = null; this.dropRemote(); this.stageTheme(name, cx); this.welcome(name); };
     const item = (th) => ({ name: th.name, colors: th.colors, light: th.light });
-    const presets = this.presets.filter((p) => !all.some((th) => th.name === p.name))
+    const presets = this.presets.filter((p) => !p.remote && !all.some((th) => th.name === p.name))
       .map((p) => ({ name: p.name, colors: presetColors(p.file), light: contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background) }));
     const brand = [...all.map(item), ...presets].filter((x) => this.isBranded(x.name));
     const grid = (list, empty) => {
@@ -1616,6 +1838,7 @@ export default class ThemeStudio extends View {
         .child(h_flex().flex_1().min_w(0).h(30).px(9).gap(7).items_center().rounded(8).border_1().border_color(t.input).bg(t.background)
           .child(svg(`${ICONS}/search.svg`).size(14).flex_none().text_color(t.dim))
           .child(Input.new(this.themeSearch).flex_1().min_w(0).h(28).text_color(t.foreground)))
+        .child(this.button("browse-open", "Browse", t, (_e, cx) => this.browseGithub(cx)))
         .child(this.button("import-open", this.importing ? "Close" : "Import", t, (_e, cx) => { if (this.importing) { this.importing = false; cx.notify(); } else this.goTo("import", cx); })))
         .child(this.seg("thf", [["all", "All"], ["dark", "Dark"], ["light", "Light"], ["base", "Base"], ["branded", "Branded"]], f, t, (v, cx) => { this.themeFilter = v; cx.notify(); }, true)))
       .when(this.importing, (el) => el.child(this.importPanel(t)))
@@ -1692,10 +1915,32 @@ export default class ThemeStudio extends View {
         .child(Input.new(this.importName).flex_1().min_w(0).h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
         .child(this.button("import-clip", "From clipboard", t, (_e, cx) => this.importTheme(cx, cx.read_from_clipboard() || "")))
         .child(this.button("import", "Import", t, (_e, cx) => this.importTheme(cx), true)))
+      .child(h_flex().gap(6)
+        .child(Input.new(this.ghLink).flex_1().min_w(0).h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+        .child(this.button("gh-open", "From GitHub", t, (_e, cx) => this.importGithub(this.ghLink.value(), cx))))
+      .when(!!this.gh, (el) => el.child(this.githubPanel(t)))
       .when(this.found.length > 0, (el) => el.child(h_flex().flex_wrap().gap(6).items_center()
         .child(div().text_size(11.5).text_color(t.dim).child("On this Mac:"))
         .children(this.found.map((f) => this.chip(t, `found-${f.name}`, f.name, null, false, (_e, cx) => this.importFile(f.path, cx))))))
-      .child(div().text_size(11.5).text_color(t.dim).line_height("16px").child("iTerm2 (.itermcolors), Ghostty, kitty, Alacritty TOML or Herdr JSON: paste it, drop a file here, or pick one found in Downloads or on the Desktop. Nothing changes until you use it."));
+      .child(div().text_size(11.5).text_color(t.dim).line_height("16px").child(`iTerm2 (.itermcolors), Ghostty, kitty, Alacritty TOML or Herdr JSON: paste it, drop a file here, pick one found in Downloads or on the Desktop, or give a GitHub link. A theme published for the Studio brings its whole look; Browse (beside Import) shows themes published on GitHub. Nothing changes until you use it.`));
+  }
+
+  // A GitHub listing: repos (Browse), then folders and theme files as chips.
+  githubPanel(t) {
+    const g = this.gh, q = this.ghFilter.value().trim().toLowerCase(), has = (s) => !q || s.toLowerCase().includes(q);
+    const dirs = g.dirs.filter((d) => has(d.name)), files = g.files.filter((f) => has(f.name));
+    const MAX = 60, total = g.dirs.length + g.files.length;
+    return v_flex().gap(8).pt(4)
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().min_w(0).truncate().text_size(12).font_semibold().child(g.busy ? `${g.title}…` : g.title))
+        .when(total > 12, (el) => el.child(Input.new(this.ghFilter).w(170).h(26).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground)))
+        .child(this.iconButton("gh-close", "close", "Close the list", t, (_e, cx) => { this.gh = null; cx.notify(); })))
+
+      .when(dirs.length + files.length > 0, (el) => el.child(h_flex().flex_wrap().gap(6)
+        .children(dirs.map((d) => this.chip(t, `ghd-${d.name}`, `${d.name}/`, null, false, (_e, cx) => this.listGithub(d.api, `${g.title}/${d.name}`, cx))))
+        .children(files.slice(0, MAX).map((f) => this.chip(t, `ghf-${f.name}`, f.name.replace(/\.(json|itermcolors|toml|conf|ya?ml)$/i, ""), null, false, (_e, cx) => this.importRaw(f.raw, f.name, cx))))))
+      .when(files.length > MAX, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(`${files.length - MAX} more: filter to find them`)))
+      .when(!g.busy && !dirs.length && !files.length, (el) => el.child(div().text_size(12).text_color(t.dim).child(q ? "No matches." : "No theme files here.")));
   }
 
   // --- the editor's tabs ------------------------------------------------------------------

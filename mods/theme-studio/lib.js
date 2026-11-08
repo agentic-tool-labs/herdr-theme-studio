@@ -881,3 +881,70 @@ export function withFooterIcon(tree, on) {
   return root;
 }
 export const hasFooterIcon = (tree) => { const f = tree && findNode(tree, "sidebar-footer"); return !!(f && f.content && f.content.mod === FOOTER_MOD); };
+
+// --- sharing themes ------------------------------------------------------------
+// A published theme is a Herdr theme file plus a "studio" block (its parts and details), with any
+// picture beside it, its path relative to the file. tools/publish-theme.py writes one.
+
+const META_KEYS = ["description", "author", "url", "ios", "android", "macos"];
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** Only what a studio block may carry: part objects and string details. Comes from strangers. */
+export function cleanStudio(s) {
+  if (!isObj(s)) return null;
+  const out = {};
+  for (const p of PARTS) if (isObj(s[p])) out[p] = s[p];
+  if (typeof s.preview === "string") out.preview = s.preview;
+  if (isObj(s.meta)) out.meta = Object.fromEntries(META_KEYS.filter((k) => typeof s.meta[k] === "string").map((k) => [k, s.meta[k].slice(0, 2000)]));
+  return out;
+}
+
+/** A studio block as a saved theme's extras: its own parts, Herdr's for the rest, details fixed. */
+export function studioExtras(s) {
+  const ex = { src: Object.fromEntries(PARTS.map((q) => [q, s[q] ? "own" : "default"])), meta: s.meta || {} };
+  for (const q of PARTS) if (s[q]) ex[q] = s[q];
+  return ex;
+}
+
+/** A repo's herdr-themes.json → its theme files: .json paths inside the repo, at most 20. */
+export function manifestThemes(m) {
+  return (isObj(m) && Array.isArray(m.themes) ? m.themes : []).filter((f) => typeof f === "string" && /\.json$/i.test(f) && !f.startsWith("/") && !f.split("/").includes("..")).slice(0, 20);
+}
+/** Browse themes lists a theme only with a preview picture, a description and an author. */
+export const browsable = (s) => !!(s && isPicture(s.preview) && s.meta && s.meta.description && s.meta.author);
+
+/** dir + a relative path, with . and .. resolved ("a/b" + "../c.jpg" = "a/c.jpg"). */
+export function joinPath(dir, rel) {
+  const out = [];
+  for (const p of `${dir}/${rel}`.split("/")) { if (p === "..") out.pop(); else if (p !== ".") out.push(p); }
+  return out.join("/");
+}
+
+export const isPicture = (p) => /\.(jpe?g|png|heic|webp|gif)$/i.test(p || "");
+/** A name worth offering from a folder: theme formats, or no extension (Ghostty's), not docs. */
+export const isThemeFile = (n) => /\.(json|itermcolors|toml|conf|ya?ml)$/i.test(n) || (!n.includes(".") && !/^(license|readme|copying|changelog|makefile|dockerfile|authors)$/i.test(n));
+
+/** A GitHub link → { kind: "file", raw, name } | { kind: "dir" | "gist", api, title } | null. */
+export function githubLink(link) {
+  let u = String(link || "").trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
+  if (/^(github\.com|raw\.githubusercontent\.com|gist\.github\.com)\//i.test(u)) u = `https://${u}`;
+  const file = (raw) => ({ kind: "file", raw, name: decodeURIComponent(raw.split("/").pop()) });
+  let m;
+  if (/^https:\/\/(raw|gist)\.githubusercontent\.com\/[^/]+\/[^/]+\/.+/i.test(u)) return file(u);
+  if ((m = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/(?:blob|raw)\/(.+)$/i.exec(u))) return file(`https://raw.githubusercontent.com/${m[1]}/${m[2]}`);
+  if ((m = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/tree\/([^/]+)(?:\/(.+))?$/i.exec(u))) return { kind: "dir", api: `https://api.github.com/repos/${m[1]}/contents/${m[3] || ""}?ref=${m[2]}`, title: [m[1], m[3]].filter(Boolean).join("/") };
+  if ((m = /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i.exec(u))) return { kind: "dir", api: `https://api.github.com/repos/${m[1]}/contents/`, title: m[1] };
+  if ((m = /^https:\/\/gist\.github\.com\/(?:[^/]+\/)?([0-9a-f]+)$/i.exec(u))) return { kind: "gist", api: `https://api.github.com/gists/${m[1]}`, title: "gist" };
+  return null;
+}
+
+/** GitHub's API answer for a folder or gist → { dirs: [{name, api}], files: [{name, raw}] }. */
+export function githubEntries(j) {
+  if (isObj(j) && isObj(j.files)) return { dirs: [], files: Object.values(j.files).filter((f) => isObj(f) && f.raw_url && isThemeFile(f.filename || "")).map((f) => ({ name: f.filename, raw: f.raw_url })) };
+  const l = Array.isArray(j) ? j : [];
+  const by = (a, b) => a.name.localeCompare(b.name);
+  return {
+    dirs: l.filter((e) => e.type === "dir" && !e.name.startsWith(".") && e.name !== "backgrounds").map((e) => ({ name: e.name, api: e.url })).sort(by),
+    files: l.filter((e) => e.type === "file" && e.download_url && isThemeFile(e.name)).map((e) => ({ name: e.name, raw: e.download_url })).sort(by),
+  };
+}

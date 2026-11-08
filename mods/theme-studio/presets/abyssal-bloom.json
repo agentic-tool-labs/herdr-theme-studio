@@ -22,6 +22,7 @@
     "#eefcff"
   ],
   "studio": {
+    "format": 1,
     "type": {
       "font": "MesloLGS Nerd Font Mono",
       "font_size": 11,
@@ -38,7 +39,7 @@
       "angle": 165,
       "from": "accent",
       "to": "canvas",
-      "image": "mods/theme-studio/backgrounds/abyssal-bloom.jpg",
+      "image": "../backgrounds/abyssal-bloom.jpg",
       "frost": "",
       "opacity": 0.6800000071525574,
       "chrome": 0.3199999928474426,

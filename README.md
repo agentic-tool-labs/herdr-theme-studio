@@ -143,6 +143,61 @@ listed under it for one click. An imported theme joins Your themes, and nothing 
 use it. An import can't take a name a theme already has. The first time, macOS asks whether Herdr may read Downloads or the Desktop. That prompt can
 hide behind other windows, and until you answer it the import seems to do nothing.
 
+**From GitHub**: paste a GitHub link in the field under it (or in the box, or press From
+clipboard with one copied). A link to a file opens it; a folder, a repo or a gist lists the theme
+files in it to pick from, with a filter for big folders like iTerm2-Color-Schemes' `ghostty/`.
+**Browse**, beside Import at the top of the library, opens a window of the themes in repos tagged
+`herdr-mod-theme-studio`, most starred first, as cards with the publisher's preview, the name, the
+author and the description, and a filter. Picking one closes it and previews the theme.
+
+A theme from GitHub is previewed before it's installed: the big preview wears it, glass and picture
+included, and the bar along the bottom offers **Install** (under a name you can change), **Details**
+and **Cancel**, which installs nothing. A theme [published for the Studio](#publishing-a-theme)
+installs with its whole look, picture and details included; any other file brings its colors.
+
+### Publishing a theme
+
+Save a theme in the Studio, then:
+
+```sh
+python3 ~/.config/herdr-app/mods/theme-studio/tools/publish-theme.py my-theme --out my-themes \
+  --preview ~/Desktop/my-theme.png --description "What it looks like" --author "You" --url https://example.com
+```
+
+It writes `my-themes/my-theme.json`, copies its picture to `my-themes/backgrounds/` and the preview
+to `my-themes/previews/`, and lists the theme in `my-themes/herdr-themes.json`. **Browse themes
+shows a theme only with all three of a preview, a description and an author**, listed in the
+repo's `herdr-themes.json`; the script says when one is missing. The preview is a screenshot of
+Herdr wearing the theme, about 16:10 (900 px wide is plenty). Publishing again keeps the preview. Push that
+folder to a GitHub repo and give the repo the topic `herdr-mod-theme-studio`
+(`gh repo edit --add-topic herdr-mod-theme-studio`) so Browse themes finds it. Store links
+(`--ios`, `--android`, `--macos`, each an `apps.apple.com` or `play.google.com` link) make it a
+[branded theme](#shipped-themes). A part the theme inherits from another theme isn't its own, so
+the script says so and it ships as Herdr's: make it the theme's own (**Copy from**) first.
+[herdr-theme-abyssal-bloom-demo](https://github.com/agentic-tool-labs/herdr-theme-abyssal-bloom-demo)
+and [herdr-theme-emerald-frost-demo](https://github.com/agentic-tool-labs/herdr-theme-emerald-frost-demo)
+are examples.
+
+The format (`"format": 1`) is a Herdr theme file plus one `studio` block, which the Studio keeps
+out of the theme file it writes, since Herdr skips a theme file with fields it doesn't know:
+
+```json
+{ "background": "#06192a", "foreground": "#cfe9ec", "selection": "#1e5767", "cursor": "#82eafb", "ansi": ["… 16 colors"],
+  "studio": { "format": 1, "preview": "previews/my-theme.png",
+    "type": { "font": "…", "font_size": 11, "ui_font": "Geist" }, "cursor": { "shape": "bar", "blink": true },
+    "glass": { "bg": "image", "image": "backgrounds/my-picture.jpg", "opacity": 0.94 }, "agents": { },
+    "meta": { "description": "…", "author": "…", "url": "https://…",
+              "ios": "https://apps.apple.com/…", "android": "https://play.google.com/…", "macos": "https://apps.apple.com/…" } } }
+```
+
+Parts hold what the Studio saves (any left out are Herdr's), `glass.image` and `preview` are
+relative to the file, and details are fixed once imported. The repo's root holds
+`herdr-themes.json`, listing its theme files for Browse:
+
+```json
+{ "format": 1, "themes": ["my-theme.json"] }
+```
+
 ### Shipped themes
 
 Five complete looks ship with the Studio: colors plus their own glass, fonts, cursor and agents
@@ -162,10 +217,8 @@ time you pick one a welcome shows its picture, description and store badges, onc
 
 ![A branded theme's welcome](docs/screenshots/welcome.png)
 
-`tools/make-preset.py <name>... [--meta details.json]` turns saved themes into presets like these
-(a glass picture is copied into `backgrounds/`; a preset's `studio` block holds its parts and
-details and never reaches the theme file, since Herdr skips a theme file with fields it doesn't
-know).
+They're [published files](#publishing-a-theme) in `presets/`, written by `publish-theme.py
+--out mods/theme-studio/presets --pictures mods/theme-studio/backgrounds --manifest no`.
 
 ### The editor
 
@@ -365,6 +418,7 @@ staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<toke
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase>:<hex|>` · `bloom` (the bloom editor; `bloom=close`) · `glow-add` · `glow-remove=<i>` · `glows=<json list>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `source=<part>:own|default|from:<theme>` · `copy-part=<part>:<theme>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert` ·
+GitHub: `github=<link>` (preview a file, list a folder, repo or gist) · `github-browse` · `github-pick=<name>` (a theme, file or folder in the list) · `remote=install|cancel` (the theme in preview) · `import-name=<name>` ·
 details windows: `info=<name>` (a card's ⓘ; no name closes it) · `welcome=<name>|reset` (show a branded theme's welcome, or forget which were shown)
 
 ## Checks
@@ -388,8 +442,8 @@ mods/theme-studio/
   presets/         17 theme files (5 with a `studio` block of parts and details) + SOURCES.md
   backgrounds/     pictures the shipped themes use
   badges/          the official App Store, Google Play and Mac App Store badges
+  tools/publish-theme.py  saved themes to published files (format 1)
 docs/              design page source, the layout audition (design/), build plan, screenshots, the ASCII ram
-tools/make-preset.py  saved themes to presets
 RECIPE.md          the brief to build it from scratch
 keys.json          the key it expects
 ```

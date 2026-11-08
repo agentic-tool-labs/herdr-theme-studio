@@ -310,7 +310,8 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `card=one|two|auto|both`, `card-select=<row>.<i>|<row>`, `card-item=<key>:<value>`,
   `autohide=rail|hidden|off`, `back`, `save`, `discard`,
   `tab=colors|type|glass|agents|details`, `meta=<key>:<text>`, `brand=on|off`, `info=<name>`,
-  `welcome=<name>|reset`, `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
+  `welcome=<name>|reset`, `github=<link>`, `github-browse`, `github-pick=<name>`, `remote=install|cancel`, `import-name=<name>`,
+  `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
   `size=`, `stage=<key>:<value>`, `glass-color=<key>:<hex|>`, `pick=<tok:token|glass:key>`,
   `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply` (Save in the editor), `cancel`,
   `glass=Solid|Tinted|Frosted`, `bg=`, `opacity|chrome|radius|gap|angle=<n>`, `behind=`
@@ -409,7 +410,22 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `agents`, `meta`): stripped before the theme file is written (Herdr skips a theme file with
   unknown keys), saved as the theme's extras on first use, and read as such until then. Its
   `meta` is fixed even when empty. A glass picture points into the mod's `backgrounds/`. A font
-  `fonts()` doesn't list falls back to Herdr's. `tools/make-preset.py` writes them from saved themes.
+  `fonts()` doesn't list falls back to Herdr's. `tools/publish-theme.py` writes them from saved themes, the glass picture's path relative
+  to the file (format 1, documented at its top).
+- **GitHub**, in the import panel: a link input with **From GitHub** and **Browse themes**. A file
+  link (blob, raw, gist raw) is fetched with curl to a temp file and previewed: it joins the presets
+  as `remote` (hidden from the library), its glass picture fetched into the mod's `cache/`, and is
+  picked; the footer asks "From GitHub: install as [name]" with Details, Cancel (back to the theme in
+  use) and Install, which imports it `from` its raw folder so the picture follows into
+  `backgrounds/` (raw hosts only). A folder, repo or gist goes through the contents/gists API into a
+  listing: folders and theme files as chips (60 shown, a filter past 12). **Browse**, a button before Import in the library header, opens a 620×560 window over the Studio (filter, scrolling card grid, × or a press outside closes it; picking a card closes it and previews). It makes one search
+  call (topic `herdr-mod-theme-studio`, by stars), then reads each repo's root `herdr-themes.json`
+  (`{format: 1, themes: [files]}`) and each theme from raw.githubusercontent.com, outside the API
+  limit; a theme shows only with `studio.preview`, a description and an author (`browsable`), as a
+  176px card: the preview (110px, cached in `cache/`), name and Dark/Light or "Added", "by <author>"
+  (· Branded), two lines of description, the repo and ★ in its tooltip. A count says how many tagged
+  repos or themes are hidden for lacking them. A pasted or clipboard link takes the same path.
+  A studio block from anywhere passes `cleanStudio` (part objects and string details only).
 - **Details** tab: description (textarea), author, URL; with `theme-studio.brand` set, the store
   badges (`badges/`, 36px), dim until clicked with a matching store link on the clipboard, then
   opening it. All fixed at the first Save (read-only text, link, badges); a copy drops them. `palette.svg`: a 16px palette outline in `currentColor`.
