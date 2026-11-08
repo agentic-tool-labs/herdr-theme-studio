@@ -75,9 +75,11 @@ The screenshots are of dune, with a picture as its window background.
 ![The theme library, with dune in use](docs/screenshots/manager.png)
 
 This is what opens. Click a theme to preview it on the left; nothing changes in the real window
-until you apply it. Search by name, filter to Dark or Light, and the sections run Your themes,
-Herdr's and others, then the 12 bundled presets (`presets/`, sources in `presets/SOURCES.md`).
-Every action is on the card itself:
+until you apply it. Search by name, filter to Dark, Light, Base or Branded, and the sections run
+Branded, Your themes, Herdr's and others, then the bundled presets (`presets/`): 12 classic
+palettes (sources in `presets/SOURCES.md`) and [five complete looks](#shipped-themes). A card
+whose theme has details has an **ⓘ** beside its name: click it for a window with the
+description, author, link and any store badges. Every action is on the card itself:
 
 ![Hover a card for its actions; the picked one has Apply](docs/screenshots/manager-cards.png)
 
@@ -141,9 +143,34 @@ listed under it for one click. An imported theme joins Your themes, and nothing 
 use it. An import can't take a name a theme already has. The first time, macOS asks whether Herdr may read Downloads or the Desktop. That prompt can
 hide behind other windows, and until you answer it the import seems to do nothing.
 
+### Shipped themes
+
+Five complete looks ship with the Studio: colors plus their own glass, fonts, cursor and agents
+list. Using one copies it into `themes/` with all of that. A font the Mac doesn't have falls back
+to Herdr's own (JetBrains Mono, Geist).
+
+| | |
+|---|---|
+| ![abyssal-bloom](docs/screenshots/themes/abyssal-bloom.png) | **abyssal-bloom**: deep-sea teal with a glowing jellyfish, lavender tentacles and shafts of light, over art from the game *Abyssal Bloom: Ocean Drift*. A branded theme. |
+| ![emerald-frost](docs/screenshots/themes/emerald-frost.png) | **emerald-frost**: navy glass over five glows of cyan, teal and emerald, like light through ice. |
+| ![for-ghost-green](docs/screenshots/themes/for-ghost-green.png) | **for-ghost-green**: deep navy and lilac with a cool aqua-and-green glow behind half-clear glass. |
+| ![for-ghost-glass](docs/screenshots/themes/for-ghost-glass.png) | **for-ghost-glass**: the most see-through of the set, navy and lilac over a blue and violet glow. |
+| ![for-ghost](docs/screenshots/themes/for-ghost.png) | **for-ghost**: deep navy with soft lilac text and bright terminal colors, solid and crisp. |
+
+**Branded themes** carry store links. They lead the library in their own section, and the first
+time you pick one a welcome shows its picture, description and store badges, once per theme.
+
+![A branded theme's welcome](docs/screenshots/welcome.png)
+
+`tools/make-preset.py <name>... [--meta details.json]` turns saved themes into presets like these
+(a glass picture is copied into `backgrounds/`; a preset's `studio` block holds its parts and
+details and never reaches the theme file, since Herdr skips a theme file with fields it doesn't
+know).
+
 ### The editor
 
-**Edit** makes the theme the one in use and opens four tabs: Colors, Type, Glass and Agents. A
+**Edit** makes the theme the one in use and opens five tabs: Colors, Type, Glass, Agents and
+Details. A
 tab with unsaved changes has a dot. The preview shows every change as you make it, and nothing is
 kept until **Save**. The bar along the bottom counts the changes and names their tabs; **Discard**
 drops them, and the back arrow asks first when there are any.
@@ -207,6 +234,15 @@ Changes stage like any other, so Save keeps them with the theme. **Reset the glo
 to the theme's three.
 
 ![The bloom editor](docs/screenshots/bloom.png)
+
+#### Details
+
+![Details tab, saved](docs/screenshots/details.png)
+
+A description, author and URL. They're fixed at the theme's first Save, even left empty, and a
+copy starts without them. They live with the Studio's record of the theme, never in its Herdr
+file, and Copy JSON leaves them out. Saved, the URL is a link and any store links show as the
+official App Store, Google Play and Mac App Store badges, each opening its store page.
 
 #### Agents
 
@@ -324,11 +360,12 @@ with the Studio open:
 
 Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `rename=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close|<menu id>` · `hover=<name>` (show a card's actions) · `default=dark|light:<part>:<theme|>` ·
 settings: `autohide=rail|hidden|off` · `button=on|off` · `update=check|install` · `autoupdate=on|off` ·
-editor: `tab=<colors|type|glass|agents>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
+editor: `tab=<colors|type|glass|agents|details>` · `meta=<description|author|url>:<text>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
 `bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase>:<hex|>` · `bloom` (the bloom editor; `bloom=close`) · `glow-add` · `glow-remove=<i>` · `glows=<json list>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `source=<part>:own|default|from:<theme>` · `copy-part=<part>:<theme>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
-`copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
+`copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert` ·
+details windows: `info=<name>` (a card's ⓘ; no name closes it) · `welcome=<name>|reset` (show a branded theme's welcome, or forget which were shown)
 
 ## Checks
 
@@ -348,8 +385,11 @@ mods/theme-studio/
   bloom.jxa.js     bloom background render (base color plus its glows)
   palette.svg      sidebar icon
   icons/           the window's own icons (Lucide)
-  presets/         12 theme files + SOURCES.md
+  presets/         17 theme files (5 with a `studio` block of parts and details) + SOURCES.md
+  backgrounds/     pictures the shipped themes use
+  badges/          the official App Store, Google Play and Mac App Store badges
 docs/              design page source, the layout audition (design/), build plan, screenshots, the ASCII ram
+tools/make-preset.py  saved themes to presets
 RECIPE.md          the brief to build it from scratch
 keys.json          the key it expects
 ```
@@ -357,4 +397,6 @@ keys.json          the key it expects
 ## License
 
 [MIT](LICENSE). The bundled theme palettes belong to their authors (MIT, Tokyo Night Apache-2.0): see
-[presets/SOURCES.md](mods/theme-studio/presets/SOURCES.md).
+[presets/SOURCES.md](mods/theme-studio/presets/SOURCES.md). The Abyssal Bloom picture is © Bear Poppa
+Studios, shipped for that theme only. The store badges are Apple's and Google's, used per their
+marketing guidelines.

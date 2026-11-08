@@ -1,0 +1,91 @@
+{
+  "background": "#101c2a",
+  "foreground": "#e9def3",
+  "selection": "#6fb5c8",
+  "cursor": "#7ffba5",
+  "ansi": [
+    "#1a3a5e",
+    "#eb4d45",
+    "#baffd5",
+    "#fdf392",
+    "#7ca8ff",
+    "#bf94e5",
+    "#ff5dd4",
+    "#15fca2",
+    "#64686c",
+    "#ec61ae",
+    "#e2fff5",
+    "#fbf5b6",
+    "#508cf7",
+    "#a783f7",
+    "#a6d7ff",
+    "#8df8c3"
+  ],
+  "studio": {
+    "type": {
+      "font": "MesloLGS Nerd Font Mono",
+      "font_size": 11,
+      "ui_font": "Geist",
+      "font_ligatures": false,
+      "minimum_contrast": 1
+    },
+    "cursor": {
+      "shape": "bar",
+      "blink": true
+    },
+    "glass": {
+      "bg": "theme",
+      "angle": 165,
+      "from": "accent",
+      "to": "canvas",
+      "image": "",
+      "frost": "",
+      "opacity": 1,
+      "chrome": 1,
+      "radius": 6,
+      "gap": 6,
+      "margin": 8,
+      "behind": "",
+      "bloom": "",
+      "bloomBase": "canvas",
+      "glowA": "accent",
+      "glowB": "#94e5dd",
+      "glowC": "#00c771",
+      "glowIntensity": 30
+    },
+    "agents": {
+      "row": 19,
+      "text": 12.5,
+      "icon": 12,
+      "header": 20,
+      "headerText": 10,
+      "timeText": 10,
+      "titleText": 10.5,
+      "badgeText": 9.5,
+      "time": true,
+      "headers": true,
+      "icons": false,
+      "badge": false,
+      "lines": "one",
+      "lead": "session",
+      "detailText": 11,
+      "weight": "bold",
+      "statusSide": "left",
+      "radius": 8,
+      "pad": 8,
+      "space": 0,
+      "nameColor": "",
+      "detailColor": "",
+      "timeColor": "#10cb30",
+      "cardColor": "#ea759900",
+      "borderColor": "#2e326b00",
+      "selectedColor": "",
+      "hoverColor": ""
+    },
+    "meta": {
+      "description": "Deep navy with soft lilac text and bright terminal colors, solid and crisp.",
+      "author": "Bear Poppa Studios",
+      "url": "https://bearpoppastudios.com/"
+    }
+  }
+}

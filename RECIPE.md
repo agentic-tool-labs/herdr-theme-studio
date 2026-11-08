@@ -84,12 +84,16 @@ Parts:
 
 Views:
 
-- **Library**: a search input, an All / Dark / Light seg and **Import**; then sections Your
+- **Library**: a search input and **Import**, with the filter seg on its own row under them; then
+  Branded (any theme or preset with a store link), then sections Your
   themes (files the Studio wrote or imported), Herdr's and others (the rest of `themes()`, minus
   themes named like a layout), Bundled presets (not yet installed). Cards are 176px little
   windows, radius 10: a 76px picture of the theme (a sidebar, lines in its text colors, six ANSI
   bars) over a 32px caption with the name and Dark/Light (with "Base · " when others take parts
-  from it), or "● In use". The filter seg is All / Dark / Light / Base. The picked card has an
+  from it), or "● In use"; a theme with details has a clickable ⓘ before it, opening a 560px details
+  window (description, author, URL link, store badges, Close). The filter seg is All / Dark / Light /
+  Base / Branded. The first pick of a branded theme opens the same window as a welcome, led by its
+  glass picture (516×290), once per theme (`theme-studio.welcomed`). The picked card has an
   `accent` border; while it's previewing (not the theme in use) its caption ends in **✓ Apply**, a
   22px `accent` pill. Under the pointer, a 34px `popover` strip with a `border` line above covers
   the bottom of the picture, holding 24px buttons (radius 6, `raised`, a 1px `input` border that
@@ -305,7 +309,8 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   `source=<part>:own|default|from:<theme>`, `copy-part=<part>:<theme>`, `default=dark|light:<part>:<theme|>`, `update=check|install`, `autoupdate=on|off`,
   `card=one|two|auto|both`, `card-select=<row>.<i>|<row>`, `card-item=<key>:<value>`,
   `autohide=rail|hidden|off`, `back`, `save`, `discard`,
-  `tab=colors|type|glass|agents`, `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
+  `tab=colors|type|glass|agents|details`, `meta=<key>:<text>`, `brand=on|off`, `info=<name>`,
+  `welcome=<name>|reset`, `agents=<preset>`, `agents-<key>=<n|on|off|value|hex>`, `color=<token>:<hex>`, `reset=`, `font=`, `ui-font=`,
   `size=`, `stage=<key>:<value>`, `glass-color=<key>:<hex|>`, `pick=<tok:token|glass:key>`,
   `cursor=block|underline|bar`, `cursor-blink=on|off`, `apply` (Save in the editor), `cancel`,
   `glass=Solid|Tinted|Frosted`, `bg=`, `opacity|chrome|radius|gap|angle=<n>`, `behind=`
@@ -399,8 +404,15 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   gives the desktop picture (no permission prompt); Core Image scales it to 1600px wide,
   Gaussian-blurs it (clamped, then cropped back) and dims it; it prints
   `{ok, wallpaper, out}`.
-- `presets/`: 12 theme files (`background`, `foreground`, `selection`, `cursor`, `ansi[16]`),
-  sources in `presets/SOURCES.md`. `palette.svg`: a 16px palette outline in `currentColor`.
+- `presets/`: theme files (`background`, `foreground`, `selection`, `cursor`, `ansi[16]`),
+  sources in `presets/SOURCES.md`. A preset may add a `studio` block (`type`, `cursor`, `glass`,
+  `agents`, `meta`): stripped before the theme file is written (Herdr skips a theme file with
+  unknown keys), saved as the theme's extras on first use, and read as such until then. Its
+  `meta` is fixed even when empty. A glass picture points into the mod's `backgrounds/`. A font
+  `fonts()` doesn't list falls back to Herdr's. `tools/make-preset.py` writes them from saved themes.
+- **Details** tab: description (textarea), author, URL; with `theme-studio.brand` set, the store
+  badges (`badges/`, 36px), dim until clicked with a matching store link on the clipboard, then
+  opening it. All fixed at the first Save (read-only text, link, badges); a copy drops them. `palette.svg`: a 16px palette outline in `currentColor`.
 - What `applyGlass` writes to a layout: root `background` (`"canvas"`, `{gradient: ["accent",
   "canvas"], angle}`, or `{image, fit: "cover"}`), root `terminal_opacity: 0` when see-through,
   root `colors.chrome` = the theme's chrome with alpha; on each `{tab: "active"}` block's

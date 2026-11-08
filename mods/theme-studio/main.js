@@ -33,7 +33,18 @@ const CURSOR_SEND = `ps -A -o pid=,ppid=,tty=,comm= | awk '$4 ~ /herdr-core$/ {c
 const HOLD_MS = 15000;
 const LIVE_LOOK = { font: "font_family", font_size: "font_size", ui_font: "ui_font_family" };
 // The Studio opens on the theme manager; Edit opens a theme in the editor, with these tabs.
-const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"], ["agents", "Agents"]];
+const TABS = [["colors", "Colors"], ["type", "Type"], ["glass", "Glass"], ["agents", "Agents"], ["details", "Details"]];
+// A theme's details (description, author, URL): kept with its parts in shared state, never in the
+// theme file (Herdr skips a theme file with fields it doesn't know). Set once: the theme's first Save
+// keeps them, even empty, and after that they can't be changed. A copy starts without them.
+const META = [["description", "Description"], ["author", "Author"], ["url", "URL"]];
+// A branded theme's store links, shown as the stores' own badges. Entering them is a hidden option
+// (`brand=on`, kept in shared `theme-studio.brand`); a theme that has them shows the badges to anyone.
+// Each: the details key, its name, its badge file and the host its link must be on.
+const STORES = [["ios", "App Store", "app-store", "apps.apple.com"], ["android", "Google Play", "google-play", "play.google.com"], ["macos", "Mac App Store", "mac-app-store", "apps.apple.com"]];
+const BRAND = "theme-studio.brand";
+const WELCOMED = "theme-studio.welcomed"; // branded themes whose welcome has been shown
+const isWeb = (u) => /^https:\/\/\S+$/i.test(u || "");
 // svg() paths are relative to the app home.
 const MOD_REL = "mods/theme-studio", ICONS = `${MOD_REL}/icons`;
 // Names people read; the token stays in the picker under the name.
@@ -124,6 +135,7 @@ export default class ThemeStudio extends View {
     this.openMenu = null; // the part bar's or Defaults' open menu
     this.pickTarget = null; // the color the picker edits: "tok:<token>" or "glass:<key>"
     this.bloomOpen = false; this.bloomDrag = null; // the bloom editor, and the glow being dragged in it
+    this.infoFor = null; // a theme's details window: { name, welcome }
     this.fontQuery = "";
     this.importing = false; // the import panel open on the library
     this.menuOpen = false;
@@ -137,6 +149,13 @@ export default class ThemeStudio extends View {
     this.hex.on("submit", (_e, cx) => this.stageHex(this.hex.value(), cx));
     this.fontIn = InputState.new({ placeholder: "Filter fonts…" });
     this.fontIn.on("change", (_e, cx) => { this.fontQuery = this.fontIn.value(); cx.notify(); });
+    this.metaIn = {
+      description: TextareaState.new({ placeholder: "What it looks like, in a sentence or two", rows: 3 }),
+      author: InputState.new({ placeholder: "Who made it" }),
+      url: InputState.new({ placeholder: "https://…" }),
+      ...Object.fromEntries(STORES.map(([k]) => [k, InputState.new({})])), // never shown: the badges set them
+    };
+    for (const s of Object.values(this.metaIn)) s.on("change", (_e, cx) => cx.notify()); // the Details tab's dot and Save
     this.importText = TextareaState.new({ placeholder: "Paste or drop an iTerm2, Ghostty, kitty, Alacritty or Herdr theme", rows: 7 });
     this.importName = InputState.new({ placeholder: "Theme name" });
     this.imagePath = InputState.new({ placeholder: "backgrounds/my-picture.jpg (in ~/.config/herdr-app)" });
@@ -213,7 +232,9 @@ export default class ThemeStudio extends View {
       const files = (await fs.readdir(`${MOD}/presets`).catch(() => [])).filter((f) => f.endsWith(".json")).sort();
       this.presets = [];
       for (const f of files) {
-        try { this.presets.push({ name: f.slice(0, -5), file: JSON.parse(await fs.readFile(`${MOD}/presets/${f}`, "utf8")) }); } catch {}
+        // A preset's `studio` block (its parts and details) never reaches the theme file: Herdr skips a
+        // theme file with fields it doesn't know.
+        try { const { studio, ...file } = JSON.parse(await fs.readFile(`${MOD}/presets/${f}`, "utf8")); this.presets.push({ name: f.slice(0, -5), file, studio: studio || null }); } catch {}
       }
       cx.notify();
       await this.scanThemeFiles(cx);
@@ -255,6 +276,10 @@ export default class ThemeStudio extends View {
     else if (verb === "edit") this.editTheme(arg, cx);
     else if (verb === "copy") { const [from, as] = arg.split(":"); this.copyTheme(from, as, cx); }
     else if (verb === "delete-theme") this.deleteTheme(arg, cx);
+    else if (verb === "info") this.infoFor = arg ? { name: arg, welcome: false } : null; // info=<name>: a card's details window
+    else if (verb === "welcome") { if (arg === "reset") setShared(WELCOMED, null); else if (arg) this.infoFor = { name: arg, welcome: true }; } // welcome=<name>|reset
+    else if (verb === "brand") setShared(BRAND, arg !== "off" || null); // the hidden branded option: store links on Details
+    else if (verb === "meta") { const [k, ...r] = arg.split(":"); if (this.metaIn[k]) this.metaIn[k].set_value(r.join(":")); } // meta=<description|author|url>:<text>
     else if (verb === "rename") { const [from, as] = arg.split(":"); this.renameTheme(from, as, cx); }
     // The bloom's glows: glows=<json list> · glow-add · glow-remove=<i>
     else if (verb === "glows") this.stageGlass({ glows: arg }, cx);
@@ -372,6 +397,7 @@ export default class ThemeStudio extends View {
   // --- themes ----------------------------------------------------------------
   async installPreset(p) {
     if (!(await readTextFile(themePath(p.name)))) await this.writeThemeFile(p.name, p.file);
+    if (p.studio && !extrasOf(p.name)) setExtras(p.name, this.presetExtras(p.name)); // its look and its details, fixed
     else if (!ownedThemes().includes(p.name)) setShared(K.owned, [...ownedThemes(), p.name]);
   }
 
@@ -496,8 +522,20 @@ export default class ThemeStudio extends View {
     return !!(p && contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background));
   }
   // What resolvePart reads; `over` swaps one theme's part source (the editor's unsaved choice).
+  // A bundled preset's parts and details, as a saved theme holds them. Its details are fixed (empty
+  // when it ships none), so a shipped theme's never show as editable.
+  presetExtras(name) {
+    const p = this.presets.find((x) => x.name === name && x.studio);
+    if (!p) return null;
+    const s = p.studio, ex = { src: Object.fromEntries(PARTS.map((q) => [q, s[q] ? "own" : "default"])), meta: s.meta || {} };
+    for (const q of PARTS) if (s[q]) ex[q] = s[q];
+    return ex;
+  }
+  // Yours, else a bundled preset's.
+  extrasAny(name) { return extrasOf(name) || this.presetExtras(name); }
+
   partCtx(over) {
-    const all = { ...(shared(K.themes) || {}) };
+    const all = { ...Object.fromEntries(this.presets.filter((p) => p.studio).map((p) => [p.name, this.presetExtras(p.name)])), ...(shared(K.themes) || {}) };
     if (over) { const ex = all[over.name] || {}; all[over.name] = { ...ex, src: { ...(ex.src || {}), [over.part]: over.src } }; }
     return { all, defaults: shared(K.defaults) || {}, light: (n) => this.isLight(n) };
   }
@@ -505,7 +543,13 @@ export default class ThemeStudio extends View {
   // A part's values filled out with Herdr's for what it doesn't set.
   partFull(part, v) {
     v = v || {};
-    if (part === "type") return { ...TYPE_DEFAULT, ...v };
+    if (part === "type") {
+      // A font this Mac doesn't have falls back to Herdr's default (Herdr does the same for terminals).
+      const ty = { ...TYPE_DEFAULT, ...v }, have = fonts();
+      if (have.length && !have.includes(ty.font)) ty.font = TYPE_DEFAULT.font;
+      if (have.length && !have.includes(ty.ui_font)) ty.ui_font = TYPE_DEFAULT.ui_font;
+      return ty;
+    }
     if (part === "cursor") return { shape: "block", blink: false, ...v };
     if (part === "agents") return { ...AGENTS_DEFAULT, ...v };
     return { ...GLASS_DEFAULT, ...v, bloom: "", frost: this.glass.frost }; // bloom re-renders
@@ -629,8 +673,20 @@ export default class ThemeStudio extends View {
     const src = (p, k) => (p in this.srcDraft && !k ? 1 : 0);
     const c = { theme: this.themeDraft ? 1 : 0, agents: n(this.agentsDraft), type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };
     c.agents += src("agents", c.agents); c.type += src("type", c.type); c.glass += src("glass", c.glass); c.colors += src("cursor", n(this.cursorDraft));
+    c.details = this.view === "edit" && !this.metaOf(this.editing) && Object.values(this.metaTyped()).some(Boolean) ? 1 : 0;
     return c;
   }
+
+  // A theme's saved details, or null while they can still be set.
+  metaOf(name) { return (this.extrasAny(name) || {}).meta || null; }
+  // Branded: a theme with at least one store link.
+  isBranded(name) { const m = this.metaOf(name); return !!m && STORES.some(([k]) => isWeb(m[k])); }
+  metaTyped() {
+    const m = Object.fromEntries(META.map(([k]) => [k, this.metaIn[k].value().trim()]));
+    for (const [k] of STORES) { const v = this.metaIn[k].value().trim(); if (v) m[k] = v; } // store links only when given
+    return m;
+  }
+  clearMeta() { for (const s of Object.values(this.metaIn)) s.set_value(""); }
 
   // Merges a patch into the glass draft (null drops the draft), dropping keys back at their applied value.
   stageGlass(patch, cx) {
@@ -752,6 +808,7 @@ export default class ThemeStudio extends View {
   cancelAll(cx) {
     this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {}; this.srcDraft = {};
     this.pickFor = null; this.leaving = false;
+    this.clearMeta();
     this.syncControls();
     cx.notify();
   }
@@ -1145,7 +1202,7 @@ export default class ThemeStudio extends View {
       const file = (await this.readThemeFile(from).catch(() => null)) || (th ? themeFileFrom(th.colors) : p && p.file);
       if (!file) throw new Error(`can't find theme ${from}`);
       await this.writeThemeFile(name, file);
-      if (extrasOf(from)) setExtras(name, extrasOf(from));
+      if (this.extrasAny(from)) { const { meta, ...parts } = this.extrasAny(from); setExtras(name, parts); } // a copy starts without details
       if (!(await this.waitFor(cx, () => themes().some((t) => t.name === name)))) throw new Error(`Herdr hasn't picked up ${name} yet; try again in a moment`);
       this.ask = null; this.copyName.set_value("");
       this.say(`Copied ${from} to ${name}`, "success", cx);
@@ -1233,9 +1290,11 @@ export default class ThemeStudio extends View {
         cursor: this.cursorShown(),
         agents: this.agentsNow(),
       };
-      const ex = { src };
+      // The first Save keeps the details as they are, even empty; after that they're fixed.
+      const ex = { src, meta: prev.meta || this.metaTyped() };
       for (const p of PARTS) { const v = src[p] === "own" ? live[p] : prev[p]; if (v) ex[p] = v; }
       setExtras(name, ex);
+      this.clearMeta();
       this.leaving = false;
       this.say(`Saved ${name}`, "success", cx);
       if (then) then(cx);
@@ -1272,7 +1331,7 @@ export default class ThemeStudio extends View {
     const edit = this.view === "edit";
     const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     const panel = edit
-      ? { colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx) }[this.tab]()
+      ? { colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx), details: () => this.detailsTab(t) }[this.tab]()
       : this.view === "settings" ? this.settingsView(t) : this.libraryView(t, s, cx);
     const pinned = edit ? this.pinnedEditor(t) : null;
     // The Agents tab keeps what's selected, and its color, in a column of its own beside the settings.
@@ -1303,6 +1362,7 @@ export default class ThemeStudio extends View {
             .when(!!side, (el) => el.child(side))))))
       .when(!!foot, (el) => el.child(foot))
       .when(this.bloomOpen, (el) => el.child(this.bloomDialog(t)))
+      .when(!!this.infoFor && !this.part, (el) => el.child(this.infoDialog(t)))
       // Last, so it paints over everything else.
       .when(Boolean(this.drag && this.mouse), (el) => el.child(this.dragGhost(t)));
   }
@@ -1314,7 +1374,7 @@ export default class ThemeStudio extends View {
     this.goTo("themes", cx);
   }
 
-  changeCount() { const c = this.changes(); return c.type + c.colors + c.glass + c.agents; }
+  changeCount() { const c = this.changes(); return c.type + c.colors + c.glass + c.agents + c.details; }
 
   // Every name a theme has: Herdr's, yours and the bundled presets.
   takenNames() { return new Set([...themes().map((th) => th.name), ...this.presets.map((p) => p.name), ...ownedThemes()]); }
@@ -1429,7 +1489,7 @@ export default class ThemeStudio extends View {
         this.button("discard", "Discard", t, (_e, cx) => { this.cancelAll(cx); this.goTo("themes", cx); }),
         this.button("save-leave", "Save", t, (_e, cx) => this.saveEdit(cx, (cx) => this.goTo("themes", cx)), true));
       if (n) {
-        const c = this.changes(), where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass], ["Agents", c.agents]].filter(([, k]) => k).map(([w]) => w).join(", ");
+        const c = this.changes(), where = [["Colors", c.colors], ["Type", c.type], ["Glass", c.glass], ["Agents", c.agents], ["Details", c.details]].filter(([, k]) => k).map(([w]) => w).join(", ");
         return bar(said && m.level === "error" ? note(said.text, t.blocked, said.color) : note(`${n} unsaved · ${where}${own ? "" : ` · saves as ${as}`}`, t.working, t.foreground),
           this.button("cancel-all", "Discard", t, (_e, cx) => this.cancelAll(cx), "ghost"),
           this.button("apply-all", own ? "Save" : "Save copy", t, (_e, cx) => this.saveEdit(cx), true));
@@ -1540,28 +1600,33 @@ export default class ThemeStudio extends View {
     const all = themes().filter((th) => th.name === shared("layout") || !layouts().includes(th.name));
     const q = this.themeQuery.trim().toLowerCase(), f = this.themeFilter;
     const base = this.bases = this.baseThemes();
-    const shows = (x) => (!q || x.name.toLowerCase().includes(q)) && (f === "all" || (f === "base" ? base.has(x.name) : (f === "light") === !!x.light));
-    const pick = (name) => (_e, cx) => { this.ask = null; this.stageTheme(name, cx); };
+    const shows = (x) => (!q || x.name.toLowerCase().includes(q)) && (f === "all" || (f === "base" ? base.has(x.name) : f === "branded" ? this.isBranded(x.name) : (f === "light") === !!x.light));
+    const pick = (name) => (_e, cx) => { this.ask = null; this.stageTheme(name, cx); this.welcome(name); };
     const item = (th) => ({ name: th.name, colors: th.colors, light: th.light });
     const presets = this.presets.filter((p) => !all.some((th) => th.name === p.name))
       .map((p) => ({ name: p.name, colors: presetColors(p.file), light: contrast("#000000", p.file.background) > contrast("#ffffff", p.file.background) }));
+    const brand = [...all.map(item), ...presets].filter((x) => this.isBranded(x.name));
     const grid = (list, empty) => {
       const l = list.filter(shows);
       return l.length ? h_flex().flex_wrap().gap(10).children(l.map((x) => this.themeCard(t, x, pick(x.name)))) : div().text_size(12).text_color(t.dim).child(q || f !== "all" ? "No matches." : empty);
     };
+    // Search and Import on top, the filters across the row under them.
     return v_flex().gap(22)
-      .child(h_flex().gap(8).items_center()
+      .child(v_flex().gap(8).child(h_flex().gap(8).items_center()
         .child(h_flex().flex_1().min_w(0).h(30).px(9).gap(7).items_center().rounded(8).border_1().border_color(t.input).bg(t.background)
           .child(svg(`${ICONS}/search.svg`).size(14).flex_none().text_color(t.dim))
           .child(Input.new(this.themeSearch).flex_1().min_w(0).h(28).text_color(t.foreground)))
-        .child(this.seg("thf", [["all", "All"], ["dark", "Dark"], ["light", "Light"], ["base", "Base"]], f, t, (v, cx) => { this.themeFilter = v; cx.notify(); }))
         .child(this.button("import-open", this.importing ? "Close" : "Import", t, (_e, cx) => { if (this.importing) { this.importing = false; cx.notify(); } else this.goTo("import", cx); })))
+        .child(this.seg("thf", [["all", "All"], ["dark", "Dark"], ["light", "Light"], ["base", "Base"], ["branded", "Branded"]], f, t, (v, cx) => { this.themeFilter = v; cx.notify(); }, true)))
       .when(this.importing, (el) => el.child(this.importPanel(t)))
-      .child(this.section("Your themes", t, grid(all.filter((th) => this.isOwn(th.name)).map(item), "None yet. Edit one of Herdr's below: Save makes it yours."),
+      // Branded themes (with store links) lead, in a section of their own, wherever they come from.
+      .when(brand.length > 0, (el) => el.child(this.section("Branded", t, grid(brand, ""),
+        "Themes from studios, with their apps. The first time you pick one it says hello; ⓘ on its card shows its details any time.")))
+      .child(this.section("Your themes", t, grid(all.filter((th) => this.isOwn(th.name) && !this.isBranded(th.name)).map(item), "None yet. Edit one of Herdr's below: Save makes it yours."),
         "Yours to edit and delete. A theme holds its colors and, once saved in the editor, its type, glass, cursor and agents list too."))
-      .child(this.section("Herdr's and others", t, grid(all.filter((th) => !this.isOwn(th.name)).map(item), "None."),
+      .child(this.section("Herdr's and others", t, grid(all.filter((th) => !this.isOwn(th.name) && !this.isBranded(th.name)).map(item), "None."),
         "These don't change. Edit one and Save makes your copy, so the original stays as it was."))
-      .when(presets.length > 0, (el) => el.child(this.section("Bundled presets", t, grid(presets, ""),
+      .when(presets.some((p) => !this.isBranded(p.name)), (el) => el.child(this.section("Bundled presets", t, grid(presets.filter((p) => !this.isBranded(p.name)), ""),
         "Bundled with the Studio. Using one adds it to themes/, so Herdr's Settings lists it too.")));
   }
 
@@ -1569,6 +1634,8 @@ export default class ThemeStudio extends View {
   themeCard(t, x, onClick) {
     const c = x.colors, on = this.selected() === x.name, used = this.inUse(x.name), mine = this.isOwn(x.name);
     const hot = this.hoverCard === x.name, staged = on && !!this.themeDraft && !used;
+    const m = this.metaOf(x.name), apps = m ? STORES.filter(([k]) => isWeb(m[k])).map(([, label]) => label) : [];
+    const info = m && [m.description, m.author && `By ${m.author}`, m.url, apps.length && `Apps: ${apps.join(", ")} (badges on its Details tab)`].filter(Boolean).join("\n");
     // A card's own button: it acts on this card's theme and keeps the click from picking the card.
     const act = (id, icon, tip, run, danger = false) => div().id(`ca-${id}-${x.name}`).size(24).flex_none().rounded(6).flex().items_center().justify_center().cursor_pointer()
       .bg(t.raised).border_1().border_color(t.input)
@@ -1602,6 +1669,10 @@ export default class ThemeStudio extends View {
         .when(hot, (el) => el.child(actions)))
       .child(h_flex().h(32).px(9).gap(6).items_center().bg(chrome).border_t_1().border_color(line)
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(fg).child(x.name))
+        .when(!!info, (el) => el.child(div().id(`ci-info-${x.name}`).flex_none().cursor_pointer().tooltip("Details").hover((st) => st.opacity(0.7))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => { cx.stop_propagation(); this.infoFor = { name: x.name, welcome: false }; cx.notify(); })
+          .child(svg(`${ICONS}/info.svg`).size(14).text_color(fg))))
         // Picked and previewing: Apply makes it the theme in use.
         .when(staged, (el) => el.child(h_flex().id(`ca-apply-${x.name}`).h(22).px(8).gap(4).flex_none().items_center().rounded(6).cursor_pointer()
           .bg(t.accent).text_color(t.accent_foreground).text_size(11.5).font_medium().hover((st) => st.opacity(0.88)).tooltip(`Use ${x.name}`)
@@ -1724,6 +1795,92 @@ export default class ThemeStudio extends View {
       .child(this.section("Minimum contrast", t, this.row(t, "Lift faint text",
         this.seg("mc", CONTRASTS.map((n) => [n, n === 1 ? "Off" : String(n)]), v.minimum_contrast, t, (n, cx) => this.stage("minimum_contrast", n, cx), true)),
         "Lifts terminal text that's too faint for its background, up to the ratio you pick. Off leaves programs' colors alone. The sample's lift and ligatures are close to Herdr's, not exact."));
+  }
+
+  // A theme's store badges, each a button that opens its store page (https links only).
+  badgeRow(meta, id) {
+    return h_flex().flex_wrap().gap(8).children(STORES.filter(([k]) => meta && isWeb(meta[k])).map(([k, label, file]) => div().id(`${id}-badge-${k}`).h(36).flex_none().cursor_pointer()
+      .hover((st) => st.opacity(0.85)).tooltip(`${label}: ${meta[k]}`).on_click(() => exec("open", [meta[k]]).catch(() => {}))
+      .child(image(`${MOD_REL}/badges/${file}.png`).h(36))));
+  }
+  // The first pick of a branded theme (one with store links) opens its welcome, once per theme.
+  welcome(name) {
+    const m = this.metaOf(name), seen = shared(WELCOMED) || [];
+    if (!m || !STORES.some(([k]) => isWeb(m[k])) || seen.includes(name)) return;
+    setShared(WELCOMED, [...seen, name]);
+    this.infoFor = { name, welcome: true };
+  }
+
+  // A theme's details over the Studio: from its card's ⓘ, or as a branded theme's welcome, which
+  // leads with its picture. A press outside the panel closes it.
+  infoDialog(t) {
+    const { name, welcome } = this.infoFor, m = this.metaOf(name) || {}, g = (this.extrasAny(name) || {}).glass || {};
+    const close = (_e, cx) => { this.infoFor = null; cx.notify(); };
+    const pic = welcome && g.bg === "image" && g.image ? g.image : null;
+    const field = (label, el) => v_flex().gap(3).child(div().text_size(11).font_semibold().text_color(t.dim).child(label)).child(el);
+    const text = (s) => div().text_size(13).text_color(t.foreground).child(s);
+    const hasApps = STORES.some(([k]) => isWeb(m[k]));
+    const panel = v_flex().id("info-dialog").w(560).p(22).gap(16).rounded(14).bg(t.popover).border_1().border_color(t.border).shadow_xl()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(h_flex().gap(10).items_center()
+        .child(v_flex().flex_1().min_w(0)
+          .child(div().text_size(11.5).text_color(t.dim).child(welcome ? "A branded theme" : "Theme details"))
+          .child(div().text_size(17).font_semibold().truncate().child(name)))
+        .child(this.iconButton("info-x", "close", "Close", t, close)))
+      // The picture fits its 16:9 box, scaled down.
+      .when(!!pic, (el) => el.child(div().w(516).h(290).rounded(10).overflow_hidden().border_1().border_color(t.border).bg(t.canvas).child(image(pic).size_full())))
+      .when(!!m.description, (el) => el.child(div().text_size(13.5).line_height("20px").text_color(t.foreground).child(m.description)))
+      .when(!welcome && !!m.author, (el) => el.child(field("AUTHOR", text(m.author))))
+      .when(!!m.url, (el) => el.child(field(welcome && m.author ? `BY ${m.author.toUpperCase()}` : "URL", /^https?:\/\//i.test(m.url) ? this.link("info-url", m.url, t, () => exec("open", [m.url]).catch(() => {})) : text(m.url))))
+      .when(welcome && !m.url && !!m.author, (el) => el.child(field("BY", text(m.author))))
+      .when(hasApps, (el) => el.child(field("GET THE APP", this.badgeRow(m, "info"))))
+      .when(!m.description && !m.author && !m.url && !hasApps, (el) => el.child(div().text_size(12.5).text_color(t.dim).child("No details.")))
+      .child(h_flex().justify_end().child(this.button("info-done", welcome ? "Got it" : "Close", t, close, true)));
+    return div().absolute().inset_0().bg("#00000088").flex().items_center().justify_center()
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); close(e, cx); })
+      .child(panel);
+  }
+
+  // The theme's description, author and URL: fields until its first Save, then fixed text.
+  detailsTab(t) {
+    const meta = this.metaOf(this.editing), own = ownedThemes().includes(this.editing);
+    const box = (el) => el.w_full().px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground).text_size(12.5);
+    const stop = (el) => div().w_full().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(el);
+    // A store's badge, as a button that opens its link (https only).
+    const badges = STORES.filter(([k]) => meta && isWeb(meta[k])), badgeRow = this.badgeRow(meta, "dt");
+    if (meta) return v_flex().gap(22)
+      .child(this.section("Details", t, v_flex().gap(10).children(META.map(([k, label]) => v_flex().gap(3)
+          .child(div().text_size(11).font_semibold().text_color(t.dim).child(label.toUpperCase()))
+          .child(!meta[k] ? div().text_size(12.5).text_color(t.dim).child("None")
+            : k === "url" && /^https?:\/\//i.test(meta.url) ? this.link("meta-url", meta.url, t, () => exec("open", [meta.url]).catch(() => {}))
+            : div().text_size(12.5).text_color(t.foreground).child(meta[k])))),
+        "Set at the theme's first Save, and fixed since. A copy of this theme starts without them."))
+      .when(badges.length > 0, (el) => el.child(this.section("Get the app", t, badgeRow, "Where this theme's maker has their apps. Each badge opens its store page.")));
+    return this.section("Details", t, v_flex().gap(12)
+        .child(v_flex().gap(4).child(div().text_size(12).text_color(t.muted).child("Description")).child(stop(box(Textarea.new(this.metaIn.description)).h(76).py(6))))
+        .child(v_flex().gap(4).child(div().text_size(12).text_color(t.muted).child("Author")).child(stop(box(Input.new(this.metaIn.author)).h(30))))
+        .child(v_flex().gap(4).child(div().text_size(12).text_color(t.muted).child("URL")).child(stop(box(Input.new(this.metaIn.url)).h(30))))
+        // The hidden branded option: the store badges themselves. A dim badge takes its link from the
+        // clipboard when clicked; a lit one opens it, and × drops it until the first Save.
+        .when(!!shared(BRAND), (el) => el.child(v_flex().gap(8).pt(6)
+          .child(div().text_size(11).font_semibold().text_color(t.dim).child("STORE LINKS · BRANDED"))
+          .child(h_flex().flex_wrap().gap(10).children(STORES.map(([k, label, file, host]) => {
+            const link = this.metaIn[k].value().trim();
+            return h_flex().gap(4).items_center()
+              .child(div().id(`brand-${k}`).h(36).flex_none().cursor_pointer().when(!link, (e) => e.opacity(0.35)).hover((st) => st.opacity(link ? 0.85 : 0.6))
+                .tooltip(link ? `${label}: ${link}` : `Copy the ${label} link, then click to add it`)
+                .on_click((_e, cx) => {
+                  if (link) return void exec("open", [link]).catch(() => {});
+                  const v = String(cx.read_from_clipboard() || "").trim();
+                  if (!isWeb(v) || (v.match(/^https:\/\/([^/?#]+)/i) || [])[1].toLowerCase() !== host) return this.say(`The clipboard has no ${label} link (https://${host}/…)`, "error", cx);
+                  this.metaIn[k].set_value(v); this.say(`${label} link added`, "success", cx);
+                })
+                .child(image(`${MOD_REL}/badges/${file}.png`).h(36)))
+              .when(!!link, (e) => e.child(this.iconButton(`brand-x-${k}`, "close", `Remove the ${label} link`, t, (_e, cx) => { this.metaIn[k].set_value(""); cx.notify(); })));
+          })))
+          .child(div().text_size(11.5).text_color(t.dim).child("Copy a store link, then click its badge. Fixed at the first Save like the rest.")))),
+      `Shown on the theme's card, and shipped with it when it's bundled with the Studio. ${own ? "The theme's next Save keeps them" : "Save makes your copy and keeps them with it"}, even if they're empty, and after that they can't be changed. A copy starts without them.`,
+      { hint: "They're fixed at the first Save: fill them in first." });
   }
 
   glassTab(t, s, cx) {

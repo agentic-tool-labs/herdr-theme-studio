@@ -1,0 +1,136 @@
+{
+  "background": "#06192a",
+  "foreground": "#cfe9ec",
+  "selection": "#1e5767",
+  "cursor": "#82eafb",
+  "ansi": [
+    "#0d2c3f",
+    "#f07a8a",
+    "#5ac3a1",
+    "#e8c97a",
+    "#6fa8dc",
+    "#c17ded",
+    "#53b7b3",
+    "#b8d4d8",
+    "#3d7082",
+    "#ff9eac",
+    "#6affd5",
+    "#f5dc9a",
+    "#a9c4f2",
+    "#e4c1ff",
+    "#82eafb",
+    "#eefcff"
+  ],
+  "studio": {
+    "type": {
+      "font": "MesloLGS Nerd Font Mono",
+      "font_size": 11,
+      "ui_font": "Geist",
+      "font_ligatures": false,
+      "minimum_contrast": 1
+    },
+    "cursor": {
+      "shape": "bar",
+      "blink": true
+    },
+    "glass": {
+      "bg": "image",
+      "angle": 165,
+      "from": "accent",
+      "to": "canvas",
+      "image": "mods/theme-studio/backgrounds/abyssal-bloom.jpg",
+      "frost": "",
+      "opacity": 0.6800000071525574,
+      "chrome": 0.3199999928474426,
+      "radius": 6,
+      "gap": 2,
+      "margin": 5,
+      "behind": "",
+      "bloom": "",
+      "bloomBase": "canvas",
+      "glowA": "accent",
+      "glowB": "ansi5",
+      "glowC": "#2a009e",
+      "glowIntensity": 30,
+      "glows": ""
+    },
+    "agents": {
+      "row": 20,
+      "text": 11.5,
+      "icon": 12,
+      "header": 20,
+      "headerText": 10,
+      "timeText": 10,
+      "titleText": 10.5,
+      "badgeText": 9.5,
+      "time": true,
+      "headers": true,
+      "icons": false,
+      "badge": false,
+      "lines": "auto",
+      "lead": "session",
+      "show": "both",
+      "card": {
+        "rows": [
+          {
+            "items": [
+              {
+                "kind": "status",
+                "badge": false
+              },
+              {
+                "kind": "name",
+                "grow": true,
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "indent": true,
+            "justify": "end",
+            "items": [
+              {
+                "kind": "title",
+                "grow": true,
+                "truncate": true
+              },
+              {
+                "kind": "space",
+                "grow": false,
+                "truncate": true
+              },
+              {
+                "kind": "machine"
+              },
+              {
+                "kind": "time"
+              }
+            ]
+          }
+        ]
+      },
+      "labels": null,
+      "detailText": 11,
+      "weight": "bold",
+      "statusSide": "left",
+      "radius": 8,
+      "pad": 8,
+      "space": 0,
+      "nameColor": "",
+      "detailColor": "",
+      "timeColor": "#10cb30",
+      "cardColor": "#ea759900",
+      "borderColor": "#2e326b80",
+      "selectedColor": "",
+      "hoverColor": ""
+    },
+    "meta": {
+      "description": "Deep-sea teal with a glowing jellyfish, lavender tentacles and shafts of light. From the game Abyssal Bloom: Ocean Drift.",
+      "author": "Bear Poppa Studios",
+      "url": "https://bearpoppastudios.com/",
+      "ios": "https://apps.apple.com/app/id6818533732",
+      "android": "https://play.google.com/store/apps/details?id=com.bearpoppastudios.abyssalbloom",
+      "macos": "https://apps.apple.com/us/app/abyssal-bloom-ocean-drift/id6818533732"
+    }
+  }
+}
