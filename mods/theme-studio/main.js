@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart } from "./lib.js";
 
 const HOME = appHome();
 const MOD = `${HOME}/mods/theme-studio`;
@@ -43,7 +43,8 @@ const TOKEN_LABELS = { background: "Terminal bg", canvas: "Canvas", chrome: "Chr
   working: "Working", blocked: "Needs you", done: "Done", idle: "Idle", unknown: "Unknown" };
 // Terminal colors come from the theme file itself: there's nothing for Reset to go back to.
 const TERMINAL_TOKENS = ["background", "terminal_foreground", "selection", "cursor"];
-const GLASS_LABELS = { from: "Gradient from", to: "Gradient to", bloomBase: "Bloom base", glowA: "Glow 1", glowB: "Glow 2", glowC: "Glow 3", behind: "Behind panes" };
+const GLASS_LABELS = { from: "Gradient from", to: "Gradient to", bloomBase: "Bloom base", behind: "Behind panes" };
+const glassLabel = (key) => GLASS_LABELS[key] || (key.startsWith("glow.") ? `Glow ${+key.slice(5) + 1}` : key);
 // The agents list: density presets (Comfortable is Herdr's own) and the sliders' ranges.
 const AGENT_PRESETS = {
   Comfortable: { row: 30, text: 13, icon: 16, header: 30, headerText: 11, timeText: 11, titleText: 11.5, badgeText: 10.5 },
@@ -75,7 +76,7 @@ const GLASS_PRESETS = {
 };
 const SLIDERS = { opacity: [0.3, 1, 0.01], chrome: [0.2, 1, 0.01], radius: [0, 20, 1], gap: [0, 24, 1], margin: [0, 32, 1], angle: [0, 360, 5], glowIntensity: [0, 200, 5] };
 // Glass fields the bloom picture is drawn from: changing one re-renders it.
-const BLOOM_KEYS = ["bg", "bloomBase", "glowA", "glowB", "glowC", "glowIntensity"];
+const BLOOM_KEYS = ["bg", "bloomBase", "glowA", "glowB", "glowC", "glowIntensity", "glows"];
 // A bundled preset's colors before Herdr has derived the rest: enough for the mock window.
 // ponytail: panel colors are guessed from the background; Herdr's own derivation shows after Apply.
 const presetColors = (f) => ({
@@ -122,6 +123,7 @@ export default class ThemeStudio extends View {
     this.srcDraft = {}; // the editor's part sources not yet saved: part → "own" | "default" | "from:<name>"
     this.openMenu = null; // the part bar's or Defaults' open menu
     this.pickTarget = null; // the color the picker edits: "tok:<token>" or "glass:<key>"
+    this.bloomOpen = false; this.bloomDrag = null; // the bloom editor, and the glow being dragged in it
     this.fontQuery = "";
     this.importing = false; // the import panel open on the library
     this.menuOpen = false;
@@ -157,7 +159,9 @@ export default class ThemeStudio extends View {
       st.on("change", (_e, cx) => { if (this.labelFor) this.editLabel(this.labelFor, { [k]: st.value() }, cx); });
       this.labelIn[k] = st;
     }
-    this.copyName.on("submit", (_e, cx) => this.copyTheme(this.ask && this.ask.from, this.copyName.value(), cx, this.ask && this.ask.edit));
+    this.copyName.on("change", (_e, cx) => cx.notify()); // the ask bar says when a name is taken
+    this.copyName.on("submit", (_e, cx) => this.ask && this.ask.kind === "rename" ? this.renameTheme(this.ask.from, this.copyName.value(), cx)
+      : this.copyTheme(this.ask && this.ask.from, this.copyName.value(), cx, this.ask && this.ask.edit));
 
     this.glass = { ...GLASS_DEFAULT }; // what the layout has
     this.glassDraft = {}; // Glass tab changes not yet applied
@@ -176,6 +180,12 @@ export default class ThemeStudio extends View {
     }
     this.glassFor = null;
     this.sliders = {};
+    // Each glow's strength (made here: a slider can't be made while drawing).
+    this.glowSliders = Array.from({ length: MAX_GLOWS }, (_, i) => {
+      const s = SliderState.new({ min: 0, max: 200, step: 5, value: (glowList(this.glass)[i] || {}).s ?? 100 });
+      s.on("change", (v, cx) => this.editGlows((l) => { if (l[i]) l[i].s = v; }, cx));
+      return s;
+    });
     for (const [k, [min, max, step]] of Object.entries(SLIDERS)) {
       const s = SliderState.new({ min, max, step, value: this.glass[k] });
       s.on("change", (v, cx) => this.stageGlass({ [k]: v }, cx));
@@ -245,6 +255,12 @@ export default class ThemeStudio extends View {
     else if (verb === "edit") this.editTheme(arg, cx);
     else if (verb === "copy") { const [from, as] = arg.split(":"); this.copyTheme(from, as, cx); }
     else if (verb === "delete-theme") this.deleteTheme(arg, cx);
+    else if (verb === "rename") { const [from, as] = arg.split(":"); this.renameTheme(from, as, cx); }
+    // The bloom's glows: glows=<json list> · glow-add · glow-remove=<i>
+    else if (verb === "glows") this.stageGlass({ glows: arg }, cx);
+    else if (verb === "glow-add") this.editGlows((l) => { if (l.length < MAX_GLOWS) l.push(newGlow(l)); }, cx);
+    else if (verb === "glow-remove") this.editGlows((l) => l.splice(num, 1), cx);
+    else if (verb === "bloom") { this.bloomOpen = arg !== "close"; if (this.bloomOpen) { this.view = "edit"; this.tab = "glass"; } }
     else if (verb === "export") this.exportTheme(arg || this.selected(), cx);
     else if (verb === "save") this.saveEdit(cx);
     else if (verb === "discard") { this.cancelAll(cx); this.goTo("themes", cx); } else if (verb === "color") { const [tok, hex] = arg.split(":"); this.selectTarget(`tok:${tok}`, cx, false); this.stageHex(hex, cx); }
@@ -597,6 +613,7 @@ export default class ThemeStudio extends View {
 
   // A glass color field as hex: a token through the theme, "" through its default.
   glassHex(key, g = this.glassShown(), c = this.themeColors()) {
+    if (key.startsWith("glow.")) { const o = glowList(g)[+key.slice(5)]; return this.glowHex(o ? o.c : "accent", c); }
     const v = g[key] || GLASS_DEFAULT[key];
     const fallback = c.canvas;
     return normHex(v ? c[v] || v : fallback) || "#000000";
@@ -706,6 +723,7 @@ export default class ThemeStudio extends View {
       const [r, i] = key.split(".").map(Number);
       this.editCard((c) => { const it = c.rows[r]?.items[i]; if (it) { if (hex) it.color = hex; else delete it.color; } }, cx);
     }
+    else if (key.startsWith("glow.")) { const i = +key.slice(5); this.editGlows((l) => { if (l[i]) l[i].c = hex || glowColor(i); }, cx); }
     else this.stageGlass({ [key]: hex }, cx);
   }
 
@@ -721,6 +739,7 @@ export default class ThemeStudio extends View {
   syncControls() {
     const g = this.glassShown();
     for (const [k, s] of Object.entries(this.sliders)) if (s.value() !== g[k]) s.set_value(g[k]);
+    glowList(g).forEach((o, i) => { const s = this.glowSliders[i]; if (s && s.value() !== o.s) s.set_value(o.s); });
     const hex = this.targetHex();
     const key = `${this.pickTarget}|${hex}`;
     if (!hex || this.pickFor === key) return;
@@ -849,7 +868,7 @@ export default class ThemeStudio extends View {
     const hex = (k) => this.glassHex(k, g, c);
     await fs.mkdir(`${HOME}/backgrounds`, { recursive: true }).catch(() => {});
     const rel = `backgrounds/studio-bloom-${Date.now()}.jpg`;
-    const spec = bloomSpec(hex("bloomBase"), [hex("glowA"), hex("glowB"), hex("glowC")], g.glowIntensity);
+    const spec = bloomSpec(hex("bloomBase"), glowList(g).map((o) => ({ ...o, c: this.glowHex(o.c, c) })), g.glowIntensity);
     const r = await exec("osascript", ["-l", "JavaScript", `${MOD}/bloom.jxa.js`, `${HOME}/${rel}`, JSON.stringify(spec)]);
     let out;
     try { out = JSON.parse(r.stdout.trim()); } catch { out = { ok: false, error: (r.stderr || r.stdout).trim() }; }
@@ -864,16 +883,16 @@ export default class ThemeStudio extends View {
     }
   }
 
-  // Re-renders the staged bloom shortly after the last change, so the preview shows the real picture.
+  // Renders the staged bloom's picture for Herdr shortly after the last change (the preview draws it itself).
   scheduleBloom(cx) {
     const gen = (this.bloomGen = (this.bloomGen || 0) + 1);
-    this.bloomPending = true; // the preview draws the glows itself until the picture is ready
+    this.bloomBusy = true; // the bloom editor shows the picture again once it's caught up
     cx.timer.after(250, (cx) => {
       if (gen !== this.bloomGen) return;
-      if (this.glassShown().bg !== "bloom") { this.bloomPending = false; return; }
+      if (this.glassShown().bg !== "bloom") { this.bloomBusy = false; return; }
       cx.spawn(async (cx) => {
         const rel = await this.renderBloom(this.glassShown()).catch((e) => { this.say(String(e.message || e), "error", cx); return null; });
-        if (gen === this.bloomGen) { this.bloomPending = false; if (rel) this.glassDraft.bloom = rel; cx.notify(); }
+        if (gen === this.bloomGen) { this.bloomBusy = false; if (rel) this.glassDraft.bloom = rel; cx.notify(); }
       });
     });
   }
@@ -1045,7 +1064,7 @@ export default class ThemeStudio extends View {
     cx.spawn((cx) => this.guard(cx, "Importing", async () => {
       const file = parseTheme(text ?? this.importText.value());
       const name = slug(givenName || this.importName.value() || "imported");
-      if ((await readTextFile(themePath(name))) && !ownedThemes().includes(name)) throw new Error(`a theme named ${name} already exists: pick another name`);
+      if (this.takenNames().has(name) || (await readTextFile(themePath(name)))) throw new Error(`A theme named ${name} already exists: pick another name`);
       await this.writeThemeFile(name, file);
       await this.waitFor(cx, () => themes().some((t) => t.name === name));
       this.importText.set_value(""); this.importName.set_value("");
@@ -1115,11 +1134,10 @@ export default class ThemeStudio extends View {
   }
 
   // Copies a theme (yours, Herdr's or a preset) to a new name you own, with whatever it holds beside
-  // its colors. With edit, opens the copy in the editor.
+  // its colors; a name that's taken gets a number. With edit, opens the copy in the editor.
   copyTheme(from, as, cx, edit = false) {
-    const name = slug(as || "");
-    if (!from || !name) return this.say("Give the copy a name", "error", cx);
-    if (themes().some((t) => t.name === name) || this.presets.some((p) => p.name === name)) return this.say(`A theme named ${name} already exists: pick another name`, "error", cx);
+    if (!from || !slug(as || "")) return this.say("Give the copy a name", "error", cx);
+    const name = this.freeName(slug(as));
     cx.spawn(async (cx) => {
       let ok = false;
       await this.guard(cx, `Copying ${from}`, async () => {
@@ -1135,6 +1153,35 @@ export default class ThemeStudio extends View {
       });
       if (ok && edit) this.editTheme(name, cx); else if (ok) this.stageTheme(name, cx);
     });
+  }
+
+  // Renames one of your themes: its file, what it holds beside its colors, the themes and Defaults that
+  // take parts from it, and the pick in settings when it's in use.
+  renameTheme(from, as, cx) {
+    const name = slug(as || "");
+    if (!this.isOwn(from)) return this.say(`${from} isn't yours to rename: Duplicate it instead`, "error", cx);
+    if (!name) return this.say("Give it a name", "error", cx);
+    if (name === from) { this.ask = null; return cx.notify(); }
+    if (this.takenNames().has(name)) return this.say(`A theme named ${name} already exists: pick another name`, "error", cx);
+    cx.spawn((cx) => this.guard(cx, `Renaming ${from}`, async () => {
+      const file = await this.readThemeFile(from);
+      if (!file) throw new Error(`can't find theme ${from}`);
+      await this.writeThemeFile(name, file);
+      if (!(await this.waitFor(cx, () => themes().some((t) => t.name === name)))) throw new Error(`Herdr hasn't picked up ${name} yet; try again in a moment`);
+      const ref = (s) => (s === `from:${from}` ? `from:${name}` : s);
+      const all = Object.fromEntries(Object.entries(shared(K.themes) || {}).map(([n, ex]) => [n === from ? name : n, ex && ex.src ? { ...ex, src: Object.fromEntries(Object.entries(ex.src).map(([p, s]) => [p, ref(s)])) } : ex]));
+      setShared(K.themes, all);
+      const d = shared(K.defaults) || {};
+      setShared(K.defaults, Object.fromEntries(Object.entries(d).map(([m, ps]) => [m, Object.fromEntries(Object.entries(ps || {}).map(([p, v]) => [p, v === from ? name : v]))])));
+      // ponytail: other layouts that name the old theme keep the old name; Herdr falls back to its default there.
+      if (this.inUse(from)) { await this.useTheme(cx, name); if (this.personal()) this.pushGlass(); }
+      await fs.unlink(themePath(from));
+      setShared(K.owned, ownedThemes().filter((n) => n !== from));
+      if (this.themeDraft && this.themeDraft.name === from) this.themeDraft = { ...this.themeDraft, name };
+      if (this.glassTheme === from) this.glassTheme = name;
+      this.ask = null; this.copyName.set_value("");
+      this.say(`Renamed ${from} to ${name}`, "success", cx);
+    }));
   }
 
   deleteTheme(name, cx) {
@@ -1236,6 +1283,7 @@ export default class ThemeStudio extends View {
     const dirty = this.changeCount() > 0;
     if (dirty !== this.dirtyShared) { this.dirtyShared = dirty; cx.timer.after(0, () => setShared("theme-studio.editing", dirty)); }
     const banner = this.updateBanner(t), foot = this.footer(t, cx);
+    if (this.bloomOpen && !(edit && this.tab === "glass" && this.glassShown().bg === "bloom")) this.bloomOpen = false; // left the bloom behind
     return v_flex().id("root").relative().size_full().bg(t.popover).text_color(t.foreground).text_size(13)
       .on_mouse_move((e, cx) => { if (this.drag) { this.mouse = e.local_position || e.position; cx.notify(); } })
       .on_mouse_up("left", (_e, cx) => this.endDrag(cx))
@@ -1254,6 +1302,7 @@ export default class ThemeStudio extends View {
               .child(Scrollbar.vertical("body").absolute().inset_0()))
             .when(!!side, (el) => el.child(side))))))
       .when(!!foot, (el) => el.child(foot))
+      .when(this.bloomOpen, (el) => el.child(this.bloomDialog(t)))
       // Last, so it paints over everything else.
       .when(Boolean(this.drag && this.mouse), (el) => el.child(this.dragGhost(t)));
   }
@@ -1267,12 +1316,17 @@ export default class ThemeStudio extends View {
 
   changeCount() { const c = this.changes(); return c.type + c.colors + c.glass + c.agents; }
 
-  // The name Save gives a copy of one of Herdr's themes: <name>-custom, numbered when that's taken.
-  forkName(name) {
-    let fork = `${slug(name)}-custom`;
-    for (let i = 2; themes().some((th) => th.name === fork); i++) fork = `${slug(name)}-custom-${i}`;
-    return fork;
+  // Every name a theme has: Herdr's, yours and the bundled presets.
+  takenNames() { return new Set([...themes().map((th) => th.name), ...this.presets.map((p) => p.name), ...ownedThemes()]); }
+  // `base`, or base-2, base-3… when that's taken.
+  freeName(base) {
+    const taken = this.takenNames();
+    let name = base;
+    for (let i = 2; taken.has(name); i++) name = `${base}-${i}`;
+    return name;
   }
+  // The name Save gives a copy of one of Herdr's themes: <name>-custom, numbered when that's taken.
+  forkName(name) { return this.freeName(`${slug(name)}-custom`); }
 
   // --- header, tabs, preview and bottom bar ----------------------------------------
   header(t, s, overlay) {
@@ -1384,11 +1438,16 @@ export default class ThemeStudio extends View {
     }
     if (this.view === "settings") return bar(said ? note(said.text, null, said.color) : note("Settings apply right away. They're yours, not a theme's: changing themes keeps them."));
     const name = this.selected();
-    if (ask && ask.kind === "copy") return bar(h_flex().flex_1().min_w(0).gap(8).items_center()
-        .child(div().flex_none().text_size(12).text_color(t.muted).child(`Copy ${ask.from} as`))
-        .child(div().flex_1().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.copyName).w_full().h(30).px(8).rounded(7).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))),
+    if (ask && (ask.kind === "copy" || ask.kind === "rename")) {
+      const ren = ask.kind === "rename", typed = slug(this.copyName.value() || "");
+      // Rename can't take a name in use; a copy can, and gets a number.
+      const clash = typed && typed !== ask.from && this.takenNames().has(typed) ? (ren ? `${typed} is taken` : `taken: saves as ${this.freeName(typed)}`) : null;
+      return bar(h_flex().flex_1().min_w(0).gap(8).items_center()
+        .child(div().flex_none().text_size(12).text_color(t.muted).child(ren ? `Rename ${ask.from} to` : `Copy ${ask.from} as`))
+        .child(div().flex_1().min_w(0).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.copyName).w_full().h(30).px(8).rounded(7).border_1().border_color(clash && ren ? t.blocked : t.input).bg(t.background).text_color(t.foreground)))
+        .when(!!clash, (el) => el.child(div().flex_none().text_size(11.5).text_color(ren ? t.blocked : t.muted).child(clash))),
       this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
-      this.button("copy-go", "Copy", t, (_e, cx) => this.copyTheme(ask.from, this.copyName.value(), cx), true));
+      this.button(ren ? "rename-go" : "copy-go", ren ? "Rename" : "Copy", t, (_e, cx) => ren ? this.renameTheme(ask.from, this.copyName.value(), cx) : this.copyTheme(ask.from, this.copyName.value(), cx), true)); }
     if (ask && ask.kind === "delete") {
       const uses = [...new Set(dependents(this.partCtx(), name, this.themeNames()).map(([n]) => n))];
       return bar(note(`Delete ${name}? Its file in themes/ goes too.${uses.length ? ` ${uses.join(", ")} ${uses.length > 1 ? "take parts" : "takes a part"} from it and keep${uses.length > 1 ? "" : "s"} a copy.` : ""}`, t.blocked, t.foreground),
@@ -1521,7 +1580,8 @@ export default class ThemeStudio extends View {
     const actions = h_flex().absolute().left(0).right(0).bottom(0).h(34).px(6).gap(5).items_center().justify_end()
       .bg(t.popover).border_t_1().border_color(t.border)
       .child(act("edit", "pen", mine ? "Edit" : "Edit a copy", (_e, cx) => this.editTheme(x.name, cx)))
-      .child(act("copy", "copy", "Duplicate…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "copy", from: x.name }; this.copyName.set_value(`${slug(x.name)}-copy`); }))
+      .when(mine, (el) => el.child(act("rename", "rename", "Rename…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "rename", from: x.name }; this.copyName.set_value(x.name); })))
+      .child(act("copy", "copy", "Duplicate…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "copy", from: x.name }; this.copyName.set_value(this.freeName(`${slug(x.name)}-copy`)); }))
       .child(act("json", "code", "Copy JSON", (_e, cx) => this.exportTheme(x.name, cx)))
       .when(mine && !used, (el) => el.child(act("delete", "trash", "Delete…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "delete", name: x.name }; }, true)));
     const bg = c.background, fg = c.foreground, chrome = c.chrome || bg, dim = c.dim || c.ansi8 || fg, line = c.border || c.ansi8 || dim;
@@ -1571,7 +1631,7 @@ export default class ThemeStudio extends View {
   // The color picker sits above the tab's controls while a color on that tab is picked.
   pinnedEditor(t) {
     const id = this.pickTarget;
-    if (!id) return null;
+    if (!id || this.bloomOpen) return null; // the bloom editor has the picker
     const [kind, key] = id.split(":");
     const here = { colors: kind === "tok" || id === "glass:behind", glass: kind === "glass" && key !== "behind", agents: kind === "agent" || kind === "item" }[this.tab];
     if (!here) return null;
@@ -1587,7 +1647,7 @@ export default class ThemeStudio extends View {
       badge = this.contrastBadge(t, c, key);
     } else {
       const [r, i] = kind === "item" ? key.split(".").map(Number) : [], it = kind === "item" ? this.cardOf().rows[r]?.items[i] : null;
-      label = kind === "item" ? `${it ? this.itemName(it) : "Item"} (card item)` : kind === "agent" ? `${(AGENT_COLORS.find(([k]) => k === key) || [])[1] || key} (agents list)` : GLASS_LABELS[key] || key;
+      label = kind === "item" ? `${it ? this.itemName(it) : "Item"} (card item)` : kind === "agent" ? `${(AGENT_COLORS.find(([k]) => k === key) || [])[1] || key} (agents list)` : glassLabel(key);
       reset = { can: true, tip: kind === "item" ? "Back to its role's color" : "Back to the theme's own color", run: (cx) => this.stageTarget("", cx) };
     }
     return v_flex().flex_none().px(14).py(12).border_b_1().border_color(t.border).child(this.colorEditor(t, label, key, reset, badge));
@@ -1689,7 +1749,8 @@ export default class ThemeStudio extends View {
     const background = v_flex().gap(2)
       .child(h_flex().pb(6).child(this.seg("bg", bgs, g.bg, t, (v, cx) => this.stageGlass({ bg: v }, cx), true)))
       .when(g.bg === "gradient", (el) => el.child(this.row(t, "Colors", chips([["from", "From"], ["to", "To"]]))).child(slider("angle", "Angle")))
-      .when(g.bg === "bloom", (el) => el.child(this.row(t, "Glows", chips([["bloomBase", "Base"], ["glowA", "Glow 1"], ["glowB", "Glow 2"], ["glowC", "Glow 3"]]))).child(slider("glowIntensity", "Glow strength")))
+      .when(g.bg === "bloom", (el) => el.child(this.row(t, "Colors", chips([["bloomBase", "Base"], ...glowList(g).map((_o, i) => [`glow.${i}`, `Glow ${i + 1}`])]))).child(slider("glowIntensity", "All glows"))
+        .child(this.row(t, "Glows", h_flex().flex_1().child(this.button("bloom-edit", "Edit the glows…", t, (_e, cx) => { this.bloomOpen = true; cx.notify(); })))))
       .when(g.bg === "frost", (el) => el.child(this.row(t, "Wallpaper", h_flex().flex_1().gap(8).items_center()
         .child(div().flex_1().text_size(11.5).text_color(t.dim).child("Your desktop picture, blurred."))
         .child(this.button("frost-now", "Rebuild", t, (_e, cx) => cx.spawn((cx) => this.guard(cx, "Blurring wallpaper", async () => { await this.refreshFrost(cx, true); this.pushGlass(); this.say("Frosted wallpaper rebuilt", "success", cx); })))))))
@@ -1891,9 +1952,11 @@ export default class ThemeStudio extends View {
     const flip = across ? a > 180 : !(a >= 135 && a <= 225);
     const from = this.glassHex("from", g, c), to = this.glassHex("to", g, c);
     const bands = Array.from({ length: 24 }, (_, i) => div().flex_1().bg(withAlpha(from, flip ? i / 23 : 1 - i / 23)));
-    const path = g.bg === "frost" ? g.frost : g.bg === "image" ? g.image : g.bg === "bloom" ? g.bloom : "";
+    const path = g.bg === "frost" ? g.frost : g.bg === "image" ? g.image : "";
     const backdrop = g.bg === "gradient" ? (across ? h_flex() : v_flex()).size_full().bg(to).children(bands)
-      : g.bg === "bloom" && (this.bloomPending || !path) ? this.bloomMock(g, c)
+      // The bloom is drawn from its recipe, not its picture: the picture shows only its middle here, and
+      // swapping between the two moved the glows on every change.
+      : g.bg === "bloom" ? this.bloomMock(g, c)
       // image() fits inside its box; twice the box, centered, fills it for any picture near 16:10.
       // ponytail: a far wider or taller picture still letterboxes; needs an image fit option from Herdr.
       // The sidebar alone is tall and narrow: a box far wider than tall, so the picture fits by its height.
@@ -1926,16 +1989,94 @@ export default class ThemeStudio extends View {
             .child(card("claude", [[["● Reading lib.js", c.ansi3]], [["  edits ready", c.muted]], [["Update(main.js)", c.ansi6]], [["  - .px(8)", c.ansi1]], [["  + .px(pad)", c.ansi2]], [["❯", c.accent]]], this.cursorMark(c, size))))));
   }
 
-  // The bloom drawn straight from its recipe, while the picture for Herdr is being rendered (it takes
-  // a second or two), so the preview follows a drag. Rings stand in for the soft falloff.
+  // The bloom drawn straight from its recipe, in the preview and the bloom editor, so it follows every
+  // change at once. Stacked rings stand in for the gradient: each is clear enough that, inside ring i,
+  // the stack reaches a * (i + 1) / N, so the glow fades evenly from its strength at the center to
+  // nothing at its edge, even at full strength. The spec's y counts from the bottom (Core Image's
+  // way); the screen's from the top.
   bloomMock(g, c) {
-    const spec = bloomSpec(this.glassHex("bloomBase", g, c), ["glowA", "glowB", "glowC"].map((k) => this.glassHex(k, g, c)), g.glowIntensity), N = 8;
+    const spec = bloomSpec(this.glassHex("bloomBase", g, c), glowList(g).map((o) => ({ ...o, c: this.glowHex(o.c, c) })), g.glowIntensity), N = 24;
     return div().relative().size_full().overflow_hidden().bg(spec.base)
-      .children(spec.glows.flatMap((o) => Array.from({ length: N }, (_, i) => {
+      .children(spec.glows.filter((o) => o.a > 0).flatMap((o) => Array.from({ length: N }, (_, i) => {
         const w = o.r * 2 * (1 - i / N) * 100, h = (w * spec.w) / spec.h;
-        return div().absolute().left(`${o.x * 100 - w / 2}%`).top(`${o.y * 100 - h / 2}%`).w(`${w}%`).h(`${h}%`).rounded(9999).bg(withAlpha(o.c, Math.min(1, (o.a / N) * 1.5)));
+        const alpha = 1 - (1 - (o.a * (i + 1)) / N) / (1 - (o.a * i) / N);
+        return div().absolute().left(`${o.x * 100 - w / 2}%`).top(`${(1 - o.y) * 100 - h / 2}%`).w(`${w}%`).h(`${h}%`).rounded(9999).bg(withAlpha(o.c, alpha));
       })));
   }
+
+  // The bloom up close: drag a glow to move it, add or remove glows, and set each one's color and
+  // strength. Changes stage like any other; the editor's Save keeps them.
+  bloomDialog(t) {
+    const g = this.glassShown(), c = this.themeColors(), list = glowList(g), sel = this.pickTarget, W = 480, H = 300;
+    const close = (_e, cx) => { this.bloomOpen = false; this.bloomDrag = null; cx.notify(); };
+    const clamp = (n) => Math.min(1, Math.max(0, n));
+    const at = (e) => [clamp(e.local_position.x / e.bounds.width), clamp(e.local_position.y / e.bounds.height)];
+    const place = (i, [x, y], cx) => this.editGlows((l) => { if (l[i]) Object.assign(l[i], { x, y }); }, cx);
+    const canvas = div().id("bloom-canvas").relative().w(W).h(H).flex_none().rounded(10).overflow_hidden().border_1().border_color(t.border)
+      // A press near a glow picks it up (the top one, where they overlap); it follows the pointer until the button comes up.
+      .on_mouse_down("left", (e, cx) => {
+        cx.stop_propagation();
+        if (!e.local_position || !e.bounds || !list.length) return;
+        const p = at(e), d = list.map((o) => Math.hypot((o.x - p[0]) * W, (o.y - p[1]) * H)), i = d.lastIndexOf(Math.min(...d));
+        if (d[i] <= 30) { this.bloomDrag = i; place(i, p, cx); }
+      })
+      .on_mouse_move((e, cx) => { if (this.bloomDrag != null) place(this.bloomDrag, at(e), cx); })
+      .on_mouse_up("left", (_e, cx) => { this.bloomDrag = null; cx.notify(); })
+      // The canvas has the picture's shape, so the picture fills it exactly. The recipe stands in while
+      // a glow moves or the picture is being redrawn, at the same spots.
+      .child(this.bloomDrag == null && !this.bloomBusy && g.bloom ? image(g.bloom).size_full() : this.bloomMock(g, c))
+      // A glow at the edge keeps its whole marker inside the canvas.
+      .children(list.map((o, i) => div().absolute().left(Math.min(W - 28, Math.max(2, o.x * W - 13))).top(Math.min(H - 28, Math.max(2, o.y * H - 13))).size(26).rounded(13).cursor_pointer()
+        .border_2().border_color(this.bloomDrag === i ? t.accent : "#ffffff").bg(this.glowHex(o.c, c)).shadow_md()
+        .flex().items_center().justify_center().text_size(11).font_bold().text_color("#ffffff").child(String(i + 1))));
+    const editor = (key) => sel === `glass:${key}` ? this.colorEditor(t, glassLabel(key), key.startsWith("glow.") ? (list[+key.slice(5)] || {}).c || key : key, { can: true, tip: key === "bloomBase" ? "Back to the theme's own color" : "Back to its first color", run: (cx) => this.stageTarget("", cx) }, null) : null;
+    const head = (text, extra) => h_flex().items_center().child(div().flex_1().text_size(11).font_semibold().text_color(t.dim).child(text)).when(!!extra, (el) => el.child(extra));
+    const glowRow = (o, i) => v_flex().gap(8)
+      .child(h_flex().gap(8).items_center()
+        .child(div().w(96).flex_none().child(this.chip(t, `bd-g${i}`, `Glow ${i + 1}`, this.glowHex(o.c, c), sel === `glass:glow.${i}`, (_e, cx) => this.selectTarget(`glass:glow.${i}`, cx))))
+        .child(div().flex_1().min_w(0).child(this.sliderBar(t, this.glowSliders[i], `bloom-s${i}`)))
+        .child(div().w(40).flex_none().text_right().text_size(11.5).text_color(t.muted).child(`${o.s}%`))
+        .child(this.iconButton(`bloom-rm${i}`, "trash", `Remove glow ${i + 1}`, t, (_e, cx) => { this.pickTarget = null; this.editGlows((l) => l.splice(i, 1), cx); })));
+    // The picker sits under the canvas, for whichever color is picked.
+    const [, pk] = (sel || "").split(":"), picker = pk && (pk === "bloomBase" || pk.startsWith("glow.")) ? editor(pk) : null;
+    const full = list.length >= MAX_GLOWS;
+    const side = v_flex().id("bloom-side").flex_1().min_w(0).h(H + 150).overflow_y_scroll().gap(14).pr(4)
+      .child(v_flex().gap(8).child(head("BACKGROUND"))
+        .child(h_flex().gap(8).items_center()
+          .child(div().w(96).flex_none().child(this.chip(t, "bd-base", "Base", this.glassHex("bloomBase"), sel === "glass:bloomBase", (_e, cx) => this.selectTarget("glass:bloomBase", cx))))))
+      .child(v_flex().gap(8)
+        .child(head(`GLOWS · ${list.length}`, this.button("bloom-add", full ? `${MAX_GLOWS} at most` : "+ Add a glow", t, (_e, cx) => { if (!full) this.editGlows((l) => l.push(newGlow(l)), cx); }, "ghost")))
+        // All glows scales each glow's own strength.
+        .child(h_flex().gap(8).items_center()
+          .child(div().w(96).flex_none().text_size(12.5).text_color(t.muted).child("All glows"))
+          .child(div().flex_1().min_w(0).child(this.sliderBar(t, this.sliders.glowIntensity, "bloom-strength")))
+          .child(div().w(40).flex_none().text_right().text_size(11.5).text_color(t.muted).child(`${g.glowIntensity}%`))
+          .child(div().w(30).flex_none()))
+        .children(list.map(glowRow))
+        .when(!list.length, (el) => el.child(div().text_size(12).text_color(t.dim).child("No glows: just the base color. Add one to start."))));
+    const panel = v_flex().id("bloom-dialog").w(900).p(20).gap(14).rounded(14).bg(t.popover).border_1().border_color(t.border).shadow_xl()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(h_flex().gap(10).items_center()
+        .child(v_flex().flex_1().min_w(0).child(div().text_size(15).font_semibold().child("Bloom"))
+          .child(div().text_size(12).text_color(t.muted).child("Drag a glow to move it. The preview behind follows; Save keeps it with the theme.")))
+        .child(this.iconButton("bloom-x", "close", "Done", t, close)))
+      .child(h_flex().gap(20).items_start()
+        .child(v_flex().w(W).flex_none().gap(14).child(canvas)
+          .child(picker || div().h(130).flex().items_center().justify_center().text_size(12).text_color(t.dim).child("Pick a color on the right to change it here.")))
+        .child(side))
+      .child(h_flex().gap(8).justify_end()
+        .child(this.button("bloom-reset", "Reset the glows", t, (_e, cx) => { this.pickTarget = null; this.stageGlass({ glows: "" }, cx); }, "ghost"))
+        .child(this.button("bloom-done", "Done", t, close, true)));
+    // Over the whole Studio; a press outside the panel closes it, and letting go anywhere ends a drag.
+    return div().absolute().inset_0().bg("#00000088").flex().items_center().justify_center()
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); close(e, cx); })
+      .on_mouse_up("left", (_e, cx) => { this.bloomDrag = null; cx.notify(); })
+      .child(panel);
+  }
+
+  // The bloom's glows, staged: fn edits a copy of the list.
+  editGlows(fn, cx) { const l = glowList(this.glassShown()); fn(l); this.stageGlass({ glows: glowsText(l) }, cx); }
+  glowHex(v, c = this.themeColors()) { return normHex(c[v] || v) || "#000000"; }
 
   // The terminal cursor in the mock window, in its staged shape and color (blink isn't shown).
   cursorMark(c, size) {
@@ -2371,12 +2512,13 @@ export default class ThemeStudio extends View {
       .when(value != null, (el) => el.child(div().w(44).flex_none().text_right().text_size(11.5).text_color(t.muted).child(value)));
   }
 
-  slider(t, state, id, label, value) {
-    return this.row(t, label, div().flex_1().min_w(0).child(Slider.new(state).child(SliderTrack.new(state).flex().items_center().h(20).w_full().cursor_pointer()
+  slider(t, state, id, label, value) { return this.row(t, label, div().flex_1().min_w(0).child(this.sliderBar(t, state, id)), value); }
+  sliderBar(t, state, id) {
+    return Slider.new(state).child(SliderTrack.new(state).flex().items_center().h(20).w_full().cursor_pointer()
       .child(SliderIndicator.new(state).relative().w_full().h(4).rounded(2).bg(t.input)
         .range_style((f) => f.rounded(2).bg(t.accent))
         // A 14px dot; the shell places its top-left at the groove's top, so it's pulled back by half its size less the 4px groove.
-        .child(SliderThumb.new(state).id(`thumb-${id}`).size(14).rounded(7).bg(t.foreground).border_2().border_color(t.accent).ml(-7).mt(-5))))), value);
+        .child(SliderThumb.new(state).id(`thumb-${id}`).size(14).rounded(7).bg(t.foreground).border_2().border_color(t.accent).ml(-7).mt(-5))));
   }
 
   // One of several: a joined control. `fill` stretches it across the row.

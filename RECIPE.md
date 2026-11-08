@@ -47,7 +47,7 @@ Two levels: the **theme library** (with an **import** panel and a **Settings** p
 - **Bar** along the bottom, 52px, a 1px `border` line above: a 7px status dot and one line of
   text on the left, the buttons that act on it on the right (primary `accent`, ghost, or plain).
   The editor and Settings always have it. The library has none, so its list runs to the bottom;
-  the bar comes up there only to ask (Duplicate's name, Delete's confirm, Undo all), while the
+  the bar comes up there only to ask (Rename's and Duplicate's name, Delete's confirm, Undo all), while the
   Studio is busy, or for 8 s after a message.
 - **Update banner**, 38px, under the header when a newer release is out (or the last install
   failed): an `accent` dot, "Theme Studio v<latest> is available. You have v<installed>." on a 12%
@@ -66,8 +66,10 @@ Parts:
   `raised` with a shadow. **Toggle**: a 30×18 track, `accent` when on, a 14px knob.
 - **Chip**: a 28px pill with a 14px color dot, for a color that opens the picker.
 - **Mock window**, filling the canvas: the backdrop (canvas; the gradient as bands; the frost,
-  bloom or image file at twice the box, centered, since `image()` only fits inside its box; while a
-  Bloom picture renders, the glows drawn as rings from the recipe); a 210px sidebar (Spaces, then
+  or image file at twice the box, centered, since `image()` only fits inside its box; Bloom always
+  drawn from its recipe as rings (24 per glow, each clear enough that the stack fades evenly from
+  the glow's strength at its center to nothing at its edge), since the picture at twice the box
+  showed only its middle and swapping between the two moved the glows); a 210px sidebar (Spaces, then
   the agents list by the staged agents settings) and a 34px tab bar in the chrome color at its
   opacity, all in the staged panel font; two pane cards in the terminal color at its opacity, with
   the real radius, margin and gap over the behind color, text in the staged font, size,
@@ -92,15 +94,18 @@ Views:
   22px `accent` pill. Under the pointer, a 34px `popover` strip with a `border` line above covers
   the bottom of the picture, holding 24px buttons (radius 6, `raised`, a 1px `input` border that
   turns `accent` under the pointer, a 13px `foreground` icon, a tooltip each), right-aligned:
-  Edit (pen; "Edit a copy" when not yours), Duplicate… (copy), Copy JSON (code), and, for your own
-  theme when it's not in use, Delete… (trash, `blocked`). A button acts on its own card's theme and
-  doesn't pick the card; Duplicate and Delete pick it, then ask in the bar: a name input with
-  Cancel and Copy, or "Delete <name>? Its file in themes/ goes too." with Keep it and Delete. The
+  Edit (pen; "Edit a copy" when not yours), Rename… (yours only), Duplicate… (copy), Copy JSON
+  (code), and, for your own theme when it's not in use, Delete… (trash, `blocked`). A button acts on
+  its own card's theme and doesn't pick the card; Rename, Duplicate and Delete pick it, then ask in
+  the bar: a name input with Cancel and Rename or Copy (Duplicate fills in a free `<name>-copy`;
+  as you type, a taken name shows "<name> is taken" in `blocked` for a rename, "taken: saves as
+  <name>-2" for a copy), or "Delete <name>? Its file in themes/ goes too." with Keep it and Delete. The
   header's ⋯: Import a theme…, Show the themes folder, Undo all Theme Studio changes… (once a
   backup exists; the bar then asks before it runs).
 - **Import**, a panel at the top of the library: a textarea that also takes a dropped file, a
   name input, **From clipboard**, **Import**, and the `.itermcolors` files found in Downloads and
-  on the Desktop as chips. An import lands in Your themes, picked but not used.
+  on the Desktop as chips. An import lands in Your themes, picked but not used. A name any theme
+  has (Herdr's, yours, a preset) is refused.
 - **Colors**: Cursor (Shape seg, Blink toggle, Color chip, and, until `~/.zshrc` sources
   `cursor.zsh`, a note with **Copy line**); token tiles 118px wide in groups (Surfaces, Lines,
   Text, Accent, Agent status), each a swatch over its label ("Terminal bg", "Needs you", …); the
@@ -118,7 +123,8 @@ Views:
   **Make my copy of <layout>**. On a personal layout: Start from (Solid, Tinted, Frosted as
   little pictures, a check on the current one); Window background seg (Theme, Gradient, Bloom,
   Wallpaper, Image) with the matching rows under it (From and To chips plus the angle; Base, Glow
-  1–3 chips plus Glow strength 0–200%; Rebuild; the image path and **Choose…**); Glass surfaces
+  chips, one per glow, plus All glows 0–200% and **Edit the glows…**; Rebuild; the image path and
+  **Choose…**); Glass surfaces
   (Sidebar and bar 0.2–1, Terminal 0.3–1; their color is always the theme's chrome and terminal
   color); Pane frames (Corner radius 0–20, Margin 0–32, Gap 0–24); and a hint that true window
   transparency is herdr-app#190.
@@ -222,7 +228,11 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   any it didn't save, Herdr's (glass `GLASS_DEFAULT`, the solid look; cursor block, steady; agents
   `AGENTS_DEFAULT`; type JetBrains Mono 14, Geist, no ligatures, contrast 1), so nothing from the
   previous theme carries over. The library's preview shows the same. Copy carries the extras along; Delete removes the
-  file, the name and the extras, and refuses a theme in use.
+  file, the name and the extras, and refuses a theme in use. Rename (yours only, to a name no theme
+  has) writes the file under the new name, waits for `themes()` to list it, moves the extras and
+  rewrites `from:<old>` sources and Defaults entries, then, when it's in use, `app.theme {new}` and
+  a glass push (so the layout's root theme names it); then the old file goes. Other layouts that
+  name the old theme keep the old name.
 - **Staging**: the library's pick, and the editor's Type, Colors and Glass controls, stage into
   drafts (theme pick, settings, theme tokens, glass, cursor); previews, sliders and the picker
   show them. Use it (library) or Save (editor) writes them in one guarded task: the theme pick
@@ -239,13 +249,29 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   every herdr-core child process so open panes change at once. The Studio never edits
   `~/.zshrc`; it offers the `source` line to copy and checks whether it's there. The mock window
   draws the cursor after the last prompt.
-- **Glass** colors (gradient From/To, bloom base and glows) are tokens or hex. Bloom colors
+- **Glass** colors (gradient From/To, bloom base and glows) are tokens or hex. Bloom settings
   can't be read back from the tree, so they're kept per layout in shared
   `theme-studio.glass-extra`.
+- **Glows**: the glass's `glows` is JSON text (so a staged list compares by value) of up to eight
+  `{c, x, y, s, r, a}`: color (token or hex), position (fractions from the top left), its own
+  strength in percent (times `glowIntensity`, All glows), radius (fraction of the width) and
+  strength at 100%. A bloom saved before the list has `glowA/B/C`, read as three glows at the old
+  spots (top left 0.16,0.14; right 0.88,0.48; bottom 0.42,0.96; radius 0.3/0.26/0.28, strength
+  0.55/0.45/0.4). A new glow takes the next of accent, ansi5, ansi6, ansi4, ansi2, ansi3, ansi1,
+  ansi13, at whichever of eight spots is farthest from the others, radius 0.27, strength 0.45.
+- **The bloom editor**: a 900px panel over the Studio (a press outside closes it). Left: the
+  bloom at 480×300, the rendered picture when it's current, else the recipe; numbered 26px
+  markers in each glow's color, kept inside the edge. A press within 30px of a marker picks it
+  up and it follows the pointer until the button comes up. Under it, the color picker for the
+  picked chip. Right, scrolling: Base chip; "GLOWS · n" with **+ Add a glow**; All glows; a row per
+  glow (chip, its strength 0–200%, remove). Bottom: **Reset the glows** (back to the theme's
+  three) and **Done**. Glow sliders are made in `init()` (eight), since a slider can't be made
+  while drawing.
 - **Bloom**: Herdr paints only a color, a two-color linear gradient or a picture behind panes,
-  and a mod can't draw behind them. So `bloom.jxa.js` renders the base color and three radial
-  glows (Core Image, blurred 90px) into `backgrounds/studio-bloom-<time>.jpg`, 250 ms after the
-  last change; until it's ready the preview draws the glows from the recipe, so it follows a drag. Re-rendered when the theme changes; old
+  and a mod can't draw behind them. So `bloom.jxa.js` renders the base color and the radial
+  glows (Core Image, blurred 90px; a glow at 0 is skipped, since Core Image returns nothing for it)
+  into `backgrounds/studio-bloom-<time>.jpg`, 250 ms after the last change (Core Image counts y
+  from the bottom, so `bloomSpec` flips it). Re-rendered when the theme changes; old
   renders are deleted, all of them when the background leaves Bloom. **Make my copy** runs `layout.clone`, which
   switches layouts and so closes the window; a detached `herdr-app do` script reopens it,
   and the new copy (seeing shared `theme-studio.add-button`) adds the palette icon. Settings offers the same copy for the icon alone.
@@ -271,7 +297,9 @@ footer block grows by that row (`layout.resize`), shrinking back when the sideba
   the saved dark and light themes, and switches back to the saved layout (via the detached
   script when that switch would close the window). Themes and layout copies stay.
 - **Commands**: `herdr-app do theme-studio.<command>` or `"theme-studio:<command>"` in
-  keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>`,
+  keys.json: `select=<name>` (or `theme=`), `edit=<name>`, `copy=<from>:<new>` (a taken name
+  gets a number), `rename=<from>:<new>`, `bloom` / `bloom=close`, `glow-add`, `glow-remove=<i>`,
+  `glows=<json list>`,
   `delete-theme=<name>`, `export=<name>`, `view=themes|import|settings`, `menu=more|close`,
   `hover=<name>` (a card's actions, for screenshots), `menu=<id>` (a part bar or Defaults menu),
   `source=<part>:own|default|from:<theme>`, `copy-part=<part>:<theme>`, `default=dark|light:<part>:<theme|>`, `update=check|install`, `autoupdate=on|off`,

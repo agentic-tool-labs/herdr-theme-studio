@@ -638,9 +638,9 @@ export function withAgentsMod(tree, on) {
 }
 
 export const GLASS_DEFAULT = { bg: "theme", angle: 165, from: "accent", to: "canvas", image: "", frost: "", opacity: 1, chrome: 1, radius: 6, gap: 6, margin: 8, behind: "",
-  bloom: "", bloomBase: "canvas", glowA: "accent", glowB: "ansi5", glowC: "ansi6", glowIntensity: 100 };
-/** Glass fields a layout tree can't give back (the bloom colors), kept beside it in shared state. */
-export const GLASS_EXTRA = ["bloomBase", "glowA", "glowB", "glowC", "glowIntensity"];
+  bloom: "", bloomBase: "canvas", glowA: "accent", glowB: "ansi5", glowC: "ansi6", glowIntensity: 100, glows: "" };
+/** Glass fields a layout tree can't give back (the bloom's colors and spots), kept beside it in shared state. */
+export const GLASS_EXTRA = ["bloomBase", "glowA", "glowB", "glowC", "glowIntensity", "glows"];
 
 /** Copy of a layout tree with the glass look applied to its root and its `{tab:"active"}` blocks.
  *  `base` holds the theme's opaque `chrome` and `background` colors as hex, which get the alpha.
@@ -683,12 +683,37 @@ export function applyGlass(tree, g, base) {
   return root;
 }
 
-/** What bloom.jxa.js draws: the base color and three soft glows (top left, right, bottom), with
- *  colors already resolved to hex. Positions are fractions of the picture, origin bottom left. */
+/** The bloom's glows as a list, each {c, x, y, s, r, a}: its color (a theme token or hex), where it
+ *  sits (fractions of the window from its top left), its own strength (percent, on top of
+ *  glowIntensity), its radius and its strength at 100%. Kept in the glass as `glows`, JSON text so a
+ *  staged list compares by value. A bloom saved before the list (glowA/B/C) reads as its three glows. */
+const LEGACY_GLOWS = [["glowA", "accent", 0.16, 0.14, 0.3, 0.55], ["glowB", "ansi5", 0.88, 0.48, 0.26, 0.45], ["glowC", "ansi6", 0.42, 0.96, 0.28, 0.4]];
+export const MAX_GLOWS = 8;
+/** The color a glow added (or reset) at index i starts from. */
+export const glowColor = (i) => ["accent", "ansi5", "ansi6", "ansi4", "ansi2", "ansi3", "ansi1", "ansi13"][i % 8];
+export function glowList(g) {
+  const ok = (o) => o && typeof o.c === "string" && [o.x, o.y].every((n) => n >= 0 && n <= 1);
+  try {
+    const l = JSON.parse(g.glows);
+    if (Array.isArray(l)) return l.filter(ok).slice(0, MAX_GLOWS).map((o) => ({ c: o.c, x: o.x, y: o.y, s: o.s ?? 100, r: o.r ?? 0.27, a: o.a ?? 0.45 }));
+  } catch {}
+  return LEGACY_GLOWS.map(([k, c, x, y, r, a]) => ({ c: g[k] || c, x, y, s: 100, r, a }));
+}
+export const glowsText = (l) => JSON.stringify(l.map((o) => ({ ...o, x: +o.x.toFixed(3), y: +o.y.toFixed(3) })));
+/** A new glow: the next color, at whichever of a few spots is farthest from the glows already there. */
+const GLOW_SPOTS = [[0.5, 0.5], [0.8, 0.2], [0.2, 0.8], [0.25, 0.3], [0.75, 0.75], [0.5, 0.15], [0.12, 0.5], [0.88, 0.85]];
+export function newGlow(l) {
+  const room = ([x, y]) => Math.min(...l.map((o) => Math.hypot(o.x - x, o.y - y)), 9);
+  const [x, y] = GLOW_SPOTS.reduce((best, p) => (room(p) > room(best) ? p : best));
+  return { c: glowColor(l.length), x, y, s: 100, r: 0.27, a: 0.45 };
+}
+
+/** What bloom.jxa.js draws: the base color and the glows (colors already resolved to hex), each at
+ *  `intensity` (all glows) times its own strength. Positions are fractions of the picture, origin
+ *  bottom left as Core Image has it. */
 export function bloomSpec(base, glows, intensity) {
-  const spots = [[0.16, 0.86, 0.3, 0.55], [0.88, 0.52, 0.26, 0.45], [0.42, 0.04, 0.28, 0.4]];
   return { w: 1600, h: 1000, base: normHex(base).slice(0, 7),
-    glows: glows.map((c, i) => ({ c: normHex(c).slice(0, 7), x: spots[i][0], y: spots[i][1], r: spots[i][2], a: Math.min(1, (spots[i][3] * intensity) / 100) })) };
+    glows: glows.map((o) => ({ c: normHex(o.c).slice(0, 7), x: o.x, y: 1 - o.y, r: o.r, a: Math.min(1, (o.a * intensity * o.s) / 10000) })) };
 }
 
 /** Reads the glass settings back out of a layout tree (inverse of applyGlass, best effort). */

@@ -10,6 +10,7 @@ function run(argv) {
     const f = (name, params) => { const x = $.CIFilter.filterWithName(name); x.setDefaults; for (const k in params) x.setValueForKey(params[k], k); return x.outputImage; };
     let img = f("CIConstantColorGenerator", { inputColor: col(s.base, 1) }).imageByCroppingToRect(rect);
     for (const g of s.glows) {
+      if (!(g.a > 0)) continue; // a glow turned off: Core Image gives nothing back for an invisible gradient
       const glow = f("CIRadialGradient", { inputCenter: $.CIVector.vectorWithXY(g.x * W, g.y * H), inputRadius0: $(0), inputRadius1: $(g.r * W), inputColor0: col(g.c, g.a), inputColor1: col(g.c, 0) });
       img = f("CISourceOverCompositing", { inputImage: glow, inputBackgroundImage: img }).imageByCroppingToRect(rect);
     }

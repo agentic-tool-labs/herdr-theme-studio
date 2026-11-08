@@ -87,11 +87,15 @@ Every action is on the card itself:
   - **Edit**. On one of Herdr's themes or a preset it's **Edit a copy**: you edit it straight
     away, and the first Save keeps your changes as `<name>-custom` (numbered if that's taken), so
     the original stays as it was.
-  - **Duplicate…**: your own copy under a name you type.
+  - **Rename…**: yours. Everything that names it follows: themes taking parts from it, your
+    Defaults, and the theme in use.
+  - **Duplicate…**: your own copy under a name you type. It starts as a free name
+    (`dune-copy`, then `dune-copy-2`), and a name that's taken gets a number.
   - **Copy JSON**: the theme in Herdr's format, for sharing.
   - **Delete…**: yours, when it's not in use.
 
-  Duplicate and Delete ask in a bar that comes up along the bottom.
+  Rename, Duplicate and Delete ask in a bar that comes up along the bottom. It says as you type
+  when a name is taken: a rename can't use it, and a copy gets a number.
 
 **A theme holds everything.** Its colors live in `themes/<name>.json`. Beside them it has four
 **parts**: type, cursor, glass and the agents list. Each part is one of:
@@ -134,7 +138,7 @@ opens [Settings](#settings).
 kitty, Alacritty (TOML) or Herdr JSON. You can paste the text, press **From clipboard** (a file copied in
 Finder works too) or drop the file on the box. Any `.itermcolors` files in Downloads and on the Desktop are
 listed under it for one click. An imported theme joins Your themes, and nothing changes until you
-use it. The first time, macOS asks whether Herdr may read Downloads or the Desktop. That prompt can
+use it. An import can't take a name a theme already has. The first time, macOS asks whether Herdr may read Downloads or the Desktop. That prompt can
 hide behind other windows, and until you answer it the import seems to do nothing.
 
 ### The editor
@@ -183,7 +187,7 @@ The sample terminal under the preview shows each pick at once. Herdr rereads `se
 | Option | What it changes |
 |---|---|
 | Start from: Solid, Tinted, Frosted | Starting points that set everything below at once. |
-| Window background: Theme, Gradient, Bloom, Wallpaper, Image | What shows behind the panes. **Gradient** uses two colors you pick and an angle. **Bloom** uses a base color with three soft glows, plus a glow strength; the preview follows a drag while the picture renders. **Wallpaper** is your desktop picture, blurred. **Image**: **Choose…** opens the macOS file picker, or you can drop a picture or type a path. A picture from outside Herdr's folder is copied into `backgrounds/`. |
+| Window background: Theme, Gradient, Bloom, Wallpaper, Image | What shows behind the panes. **Gradient** uses two colors you pick and an angle. **Bloom** uses a base color and up to eight soft glows, with a strength for all of them. **Edit the glows…** opens the bloom editor (below). **Wallpaper** is your desktop picture, blurred. **Image**: **Choose…** opens the macOS file picker, or you can drop a picture or type a path. A picture from outside Herdr's folder is copied into `backgrounds/`. |
 | Sidebar and bar | How much of the background shows through the sidebar and tab bar. They keep the theme's chrome color. |
 | Terminal | How much shows through the terminals. They keep the theme's background color. |
 | Corner radius, Margin, Gap | The pane cards' shape and spacing. |
@@ -194,6 +198,15 @@ own copy of the layout (`<layout>-studio`). The same panes, before and after:
 | Solid (Tokyo Night as Herdr draws it) | Bloom, terminals at 0.72, sidebar at 0.6, radius 12 |
 |---|---|
 | ![Before: solid](docs/screenshots/window-solid.png) | ![After: Bloom glass](docs/screenshots/window-glass.png) |
+
+**The bloom editor** shows the bloom at the window's shape, with a numbered marker on each glow:
+drag one to move it. Beside it are the base color and a row per glow, with its color, its own
+strength and a button to remove it. **All glows** scales every glow's strength, and **+ Add a
+glow** puts a new one where there's room, up to eight. The color picker opens under the bloom.
+Changes stage like any other, so Save keeps them with the theme. **Reset the glows** goes back
+to the theme's three.
+
+![The bloom editor](docs/screenshots/bloom.png)
 
 #### Agents
 
@@ -309,11 +322,11 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
 with the Studio open:
 
-Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close|<menu id>` · `hover=<name>` (show a card's actions) · `default=dark|light:<part>:<theme|>` ·
+Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `rename=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close|<menu id>` · `hover=<name>` (show a card's actions) · `default=dark|light:<part>:<theme|>` ·
 settings: `autohide=rail|hidden|off` · `button=on|off` · `update=check|install` · `autoupdate=on|off` ·
 editor: `tab=<colors|type|glass|agents>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
-`bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase|glowA|glowB|glowC>:<hex|>` ·
+`bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase>:<hex|>` · `bloom` (the bloom editor; `bloom=close`) · `glow-add` · `glow-remove=<i>` · `glows=<json list>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `source=<part>:own|default|from:<theme>` · `copy-part=<part>:<theme>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert`
 
@@ -332,7 +345,7 @@ mods/theme-studio/
   main.js          the window, its views and the command API, and the auto-hide watcher
   lib.js           pure helpers, tested by lib.test.mjs
   frost.jxa.js     wallpaper blur (osascript -l JavaScript)
-  bloom.jxa.js     bloom background render (base color plus three glows)
+  bloom.jxa.js     bloom background render (base color plus its glows)
   palette.svg      sidebar icon
   icons/           the window's own icons (Lucide)
   presets/         12 theme files + SOURCES.md

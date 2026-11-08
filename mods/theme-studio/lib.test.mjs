@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -201,8 +201,22 @@ assert.equal(readGlass(grad).from, "#112233");
 const bl = applyGlass(gtree, { ...GLASS_DEFAULT, bg: "bloom", bloom: "backgrounds/studio-bloom-1.jpg" }, { chrome: "#000000", background: "#101010" });
 assert.deepEqual(bl.background, { image: "backgrounds/studio-bloom-1.jpg", fit: "cover" });
 assert.equal(readGlass(bl).bg, "bloom");
-const spec = bloomSpec("#000000", ["#ff0000", "#00ff00", "#0000ff80"], 200);
-assert.equal(spec.glows.length, 3); assert.equal(spec.glows[2].c, "#0000ff"); assert.equal(spec.glows[0].a, 1);
+const spec = bloomSpec("#000000", [{ c: "#ff0000", x: 0.16, y: 0.14, s: 100, r: 0.3, a: 0.55 }, { c: "#0000ff80", x: 0.5, y: 0.5, s: 0, r: 0.3, a: 0.5 }], 200);
+assert.equal(spec.glows.length, 2); assert.equal(spec.glows[1].c, "#0000ff"); assert.equal(spec.glows[0].a, 1); assert.equal(spec.glows[1].a, 0);
+// stored from the top left, drawn from the bottom left
+assert.deepEqual([spec.glows[0].x, spec.glows[0].y], [0.16, 0.86]);
+// glows: a bloom saved before the list reads as its three glows, colors kept; a list is read as is
+const legacy = glowList({ glowA: "#112233" });
+assert.equal(legacy.length, 3); assert.equal(legacy[0].c, "#112233"); assert.equal(legacy[1].c, "ansi5"); assert.deepEqual([legacy[2].x, legacy[2].y], [0.42, 0.96]);
+assert.deepEqual(glowList({ glows: "[]" }), []);
+assert.equal(glowList({ glows: "not json" }).length, 3);
+const two = glowList({ glows: glowsText([...legacy.slice(0, 1), newGlow(legacy.slice(0, 1))]) });
+assert.equal(two.length, 2); assert.equal(two[1].c, "ansi5"); assert.equal(two[1].s, 100);
+assert.deepEqual([newGlow([]).x, newGlow([]).y], [0.5, 0.5]); // the first goes in the middle
+assert.notDeepEqual([newGlow([{ x: 0.5, y: 0.5 }]).x, newGlow([{ x: 0.5, y: 0.5 }]).y], [0.5, 0.5]); // the next goes elsewhere
+assert.equal(glowList({ glows: JSON.stringify([{ c: "accent", x: 2, y: 0 }, { c: "accent", x: 0.5, y: 0.5 }]) }).length, 1); // off the window: dropped
+assert.equal(glowList({ glows: JSON.stringify(Array.from({ length: 12 }, () => ({ c: "accent", x: 0.5, y: 0.5 }))) }).length, MAX_GLOWS);
+assert.equal(glowsText([{ c: "accent", x: 0.12345, y: 0.5, s: 100, r: 0.27, a: 0.45 }]), '[{"c":"accent","x":0.123,"y":0.5,"s":100,"r":0.27,"a":0.45}]');
 
 // cursor shape codes
 assert.equal(cursorCode("bar", false), 6); assert.equal(cursorCode("bar", true), 5);
