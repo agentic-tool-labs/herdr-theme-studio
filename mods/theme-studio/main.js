@@ -4,7 +4,7 @@
 // layout (through layout.set). Opened with ctrl-shift-y (mod.open theme-studio).
 
 import { View, div, image, svg } from "gpui-kit";
-import { v_flex, h_flex, Scrollbar, Popup, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, Popup, HoverCard, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes as herdrThemes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
 import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable } from "./lib.js";
@@ -14,6 +14,17 @@ const HOME = appHome();
 // within a few milliseconds the answer can't have changed. ponytail: a 30 ms memo, not an invalidation scheme.
 let themesAt = 0, themesMemo = null;
 const themes = () => { const now = Date.now(); if (!themesMemo || now - themesAt > 30) { themesMemo = herdrThemes(); themesAt = now; } return themesMemo; };
+// Theme Studio's tooltip. Herdr's own .tooltip() is one long line in the shell's style, so this is a
+// HoverCard in the theme's colours that wraps at 280px. The first line of `text` leads; the rest is muted.
+const tipCard = (t, id, el, text, grow = false) => {
+  const [head, ...rest] = String(text).split("\n").filter(Boolean);
+  const card = HoverCard.new(`tip-${id}`).open_delay(450).close_delay(60).trigger(el)
+    .content(h_flex().max_w(300).mt(6).rounded(8).bg(t.raised).border_1().border_color(withAlpha(t.accent, 0.45)).shadow_lg().overflow_hidden()
+      .child(v_flex().flex_1().min_w(0).border_l_2().border_color(t.accent).bg(withAlpha(t.accent, 0.08)).px(10).py(7).gap(3).text_size(12).line_height("17px").text_color(t.foreground)
+      .child(div().when(rest.length > 0, (e) => e.font_medium()).child(head ?? ""))
+      .children(rest.map((l) => div().text_size(11.5).text_color(t.muted).child(l)))));
+  return grow ? div().flex_1().min_w(0).child(card) : card;  // a HoverCard won't take flex sizing itself
+};
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
 const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults" };
@@ -1331,8 +1342,8 @@ export default class ThemeStudio extends View {
   // A theme in Browse: its preview, name, author and description. Click adds it (or picks it, once added).
   browseCard(t, x) {
     const have = this.isAdded(x), branded = STORES.some(([k]) => isWeb(x.meta[k]));
-    return v_flex().id(`ghc-${x.repo}-${x.name}`).w(176).rounded(10).overflow_hidden().cursor_pointer().border_1().border_color(t.border).bg(t.background)
-      .hover((st) => st.border_color(t.accent)).tooltip(`${x.meta.description}\n${x.repo} · ★ ${x.stars}`)
+    return tipCard(t, `ghc-${x.repo}-${x.name}`, v_flex().id(`ghc-${x.repo}-${x.name}`).w(176).rounded(10).overflow_hidden().cursor_pointer().border_1().border_color(t.border).bg(t.background)
+      .hover((st) => st.border_color(t.accent))
       .on_click((_e, cx) => this.pickBrowsed(x, cx))
       .child(div().w(176).h(110).bg(t.canvas).child(image(x.preview).size_full()))
       .child(v_flex().p(8).gap(3).border_t_1().border_color(t.border)
@@ -1340,7 +1351,8 @@ export default class ThemeStudio extends View {
           .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_semibold().child(x.name))
           .child(div().flex_none().text_size(11).text_color(have ? t.done : t.dim).child(have ? "Added" : x.light ? "Light" : "Dark")))
         .child(div().truncate().text_size(11.5).text_color(t.muted).child(`by ${x.meta.author}${branded ? " · Branded" : ""}`))
-        .child(div().h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.dim).child(x.meta.description)));
+        .child(div().h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.dim).child(x.meta.description))),
+      `${x.meta.description}\n${x.repo} · ★ ${x.stars}`);
   }
 
   // iTerm2 saves .itermcolors as XML or as a binary plist; plutil (built into macOS) gives XML either way.
@@ -1860,12 +1872,12 @@ export default class ThemeStudio extends View {
     const m = this.metaOf(x.name), apps = m ? STORES.filter(([k]) => isWeb(m[k])).map(([, label]) => label) : [];
     const info = m && [m.description, m.author && `By ${m.author}`, m.url, apps.length && `Apps: ${apps.join(", ")} (badges on its Details tab)`].filter(Boolean).join("\n");
     // A card's own button: it acts on this card's theme and keeps the click from picking the card.
-    const act = (id, icon, tip, run, danger = false) => div().id(`ca-${id}-${x.name}`).size(24).flex_none().rounded(6).flex().items_center().justify_center().cursor_pointer()
+    const act = (id, icon, tip, run, danger = false) => tipCard(t, `ca-${id}-${x.name}`, div().id(`ca-${id}-${x.name}`).size(24).flex_none().rounded(6).flex().items_center().justify_center().cursor_pointer()
       .bg(t.raised).border_1().border_color(t.input)
-      .hover((st) => st.bg(t.hover).border_color(t.accent)).tooltip(tip)
+      .hover((st) => st.bg(t.hover).border_color(t.accent))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((e, cx) => { cx.stop_propagation(); this.ask = null; run(e, cx); cx.notify(); })
-      .child(svg(`${ICONS}/${icon}.svg`).size(13).text_color(danger ? t.blocked : t.foreground));
+      .child(svg(`${ICONS}/${icon}.svg`).size(13).text_color(danger ? t.blocked : t.foreground)), tip);
     // An opaque strip along the bottom of the preview, just above the name.
     const actions = h_flex().absolute().left(0).right(0).bottom(0).h(34).px(6).gap(5).items_center().justify_end()
       .bg(t.popover).border_t_1().border_color(t.border)
@@ -1892,16 +1904,16 @@ export default class ThemeStudio extends View {
         .when(hot, (el) => el.child(actions)))
       .child(h_flex().h(32).px(9).gap(6).items_center().bg(chrome).border_t_1().border_color(line)
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(fg).child(x.name))
-        .when(!!info, (el) => el.child(div().id(`ci-info-${x.name}`).flex_none().cursor_pointer().tooltip("Details").hover((st) => st.opacity(0.7))
+        .when(!!info, (el) => el.child(tipCard(t, `ci-info-${x.name}`, div().id(`ci-info-${x.name}`).flex_none().cursor_pointer().hover((st) => st.opacity(0.7))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .on_click((_e, cx) => { cx.stop_propagation(); this.infoFor = { name: x.name, welcome: false }; cx.notify(); })
-          .child(svg(`${ICONS}/info.svg`).size(14).text_color(fg))))
+          .child(svg(`${ICONS}/info.svg`).size(14).text_color(fg)), "Details")))
         // Picked and previewing: Apply makes it the theme in use.
-        .when(staged, (el) => el.child(h_flex().id(`ca-apply-${x.name}`).h(22).px(8).gap(4).flex_none().items_center().rounded(6).cursor_pointer()
-          .bg(t.accent).text_color(t.accent_foreground).text_size(11.5).font_medium().hover((st) => st.opacity(0.88)).tooltip(`Use ${x.name}`)
+        .when(staged, (el) => el.child(tipCard(t, `ca-apply-${x.name}`, h_flex().id(`ca-apply-${x.name}`).h(22).px(8).gap(4).flex_none().items_center().rounded(6).cursor_pointer()
+          .bg(t.accent).text_color(t.accent_foreground).text_size(11.5).font_medium().hover((st) => st.opacity(0.88))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .on_click((_e, cx) => { cx.stop_propagation(); this.applyAll(cx); })
-          .child(svg(`${ICONS}/check.svg`).size(12)).child("Apply")))
+          .child(svg(`${ICONS}/check.svg`).size(12)).child("Apply"), `Use ${x.name}`)))
         .when(!staged, (el) => el.child(h_flex().flex_none().gap(4).items_center().text_size(11).text_color(dim)
           .when(used, (el) => el.child(div().size(6).rounded(3).bg(t.done)))
           .child(used ? "In use" : `${this.bases && this.bases.has(x.name) ? "Base · " : ""}${x.light ? "Light" : "Dark"}`))));
@@ -1990,10 +2002,9 @@ export default class ThemeStudio extends View {
           .when(!!badge, (el) => el.child(badge)));
     };
     const ansiTokens = GROUPS.find(([l]) => l === "Terminal ANSI")[1];
-    const ansi = (token) => div().id(`tok-${token}`).flex_1().h(24).rounded(5).bg(c[token]).cursor_pointer()
+    const ansi = (token) => tipCard(t, `tok-${token}`, div().id(`tok-${token}`).w_full().h(24).rounded(5).bg(c[token]).cursor_pointer()
       .border_2().border_color(sel === `tok:${token}` ? t.foreground : "#00000000")
-      .tooltip(token)
-      .on_click((_e, cx) => this.selectTarget(`tok:${token}`, cx));
+      .on_click((_e, cx) => this.selectTarget(`tok:${token}`, cx)), token, true);
     const ansiRow = (label, tokens) => h_flex().gap(4).items_center().child(div().w(44).flex_none().text_size(10.5).text_color(t.dim).child(label)).children(tokens.map(ansi));
     const behinds = [["", "Window"], ["canvas", "Canvas"], ["chrome", "Chrome"], ["background", "Terminal"]];
     const custom = g.behind && !behinds.some(([v]) => v === g.behind);
@@ -2044,9 +2055,10 @@ export default class ThemeStudio extends View {
 
   // A theme's store badges, each a button that opens its store page (https links only).
   badgeRow(meta, id) {
-    return h_flex().flex_wrap().gap(8).children(STORES.filter(([k]) => meta && isWeb(meta[k])).map(([k, label, file]) => div().id(`${id}-badge-${k}`).h(36).flex_none().cursor_pointer()
-      .hover((st) => st.opacity(0.85)).tooltip(`${label}: ${meta[k]}`).on_click(() => exec("open", [meta[k]]).catch(() => {}))
-      .child(image(`${MOD_REL}/badges/${file}.png`).h(36))));
+    const t = theme();
+    return h_flex().flex_wrap().gap(8).children(STORES.filter(([k]) => meta && isWeb(meta[k])).map(([k, label, file]) => tipCard(t, `${id}-badge-${k}`, div().id(`${id}-badge-${k}`).h(36).flex_none().cursor_pointer()
+      .hover((st) => st.opacity(0.85)).on_click(() => exec("open", [meta[k]]).catch(() => {}))
+      .child(image(`${MOD_REL}/badges/${file}.png`).h(36)), `${label}\n${meta[k]}`)));
   }
   // The first pick of a branded theme (one with store links) opens its welcome, once per theme.
   welcome(name) {
@@ -2112,15 +2124,14 @@ export default class ThemeStudio extends View {
           .child(h_flex().flex_wrap().gap(10).children(STORES.map(([k, label, file, host]) => {
             const link = this.metaIn[k].value().trim();
             return h_flex().gap(4).items_center()
-              .child(div().id(`brand-${k}`).h(36).flex_none().cursor_pointer().when(!link, (e) => e.opacity(0.35)).hover((st) => st.opacity(link ? 0.85 : 0.6))
-                .tooltip(link ? `${label}: ${link}` : `Copy the ${label} link, then click to add it`)
+              .child(tipCard(t, `brand-${k}`, div().id(`brand-${k}`).h(36).flex_none().cursor_pointer().when(!link, (e) => e.opacity(0.35)).hover((st) => st.opacity(link ? 0.85 : 0.6))
                 .on_click((_e, cx) => {
                   if (link) return void exec("open", [link]).catch(() => {});
                   const v = String(cx.read_from_clipboard() || "").trim();
                   if (!isWeb(v) || (v.match(/^https:\/\/([^/?#]+)/i) || [])[1].toLowerCase() !== host) return this.say(`The clipboard has no ${label} link (https://${host}/…)`, "error", cx);
                   this.metaIn[k].set_value(v); this.say(`${label} link added`, "success", cx);
                 })
-                .child(image(`${MOD_REL}/badges/${file}.png`).h(36)))
+                .child(image(`${MOD_REL}/badges/${file}.png`).h(36)), link ? `${label}\n${link}` : `Copy the ${label} link, then click to add it`))
               .when(!!link, (e) => e.child(this.iconButton(`brand-x-${k}`, "close", `Remove the ${label} link`, t, (_e, cx) => { this.metaIn[k].set_value(""); cx.notify(); })));
           })))
           .child(div().text_size(11.5).text_color(t.dim).child("Copy a store link, then click its badge. Fixed at the first Save like the rest.")))),
@@ -2900,8 +2911,8 @@ export default class ThemeStudio extends View {
           .child(div().w(10).text_size(10).text_color(t.dim).child(closed ? "▸" : "▾")))
         .child(div().text_size(10.5).font_semibold().text_color(t.dim).child(label.toUpperCase()))
         .when(closed && !!o.count, (el) => el.child(div().text_size(10.5).text_color(t.dim).child(`· ${o.count}`)))
-        .when(!!tip, (el) => el.child(div().id(`tip-${label}`).size(16).flex().items_center().justify_center().tooltip(tip)
-          .child(svg(`${ICONS}/info.svg`).size(13).text_color(t.dim)))))
+        .when(!!tip, (el) => el.child(tipCard(t, `sec-${label}`, div().id(`tip-${label}`).size(16).flex().items_center().justify_center()
+          .child(svg(`${ICONS}/info.svg`).size(13).text_color(t.dim)), tip))))
       .when(!closed, (el) => el.child(content))
       .when(!closed && !!o.hint, (el) => el.child(typeof o.hint === "string" ? div().text_size(11.5).text_color(t.dim).line_height("16px").child(o.hint) : o.hint));
   }
@@ -2956,13 +2967,12 @@ export default class ThemeStudio extends View {
   }
 
   iconButton(id, icon, tip, t, onClick, on = false, off = false) {
-    return div().id(id).size(30).flex_none().rounded(8).flex().items_center().justify_center()
+    return tipCard(t, id, div().id(id).size(30).flex_none().rounded(8).flex().items_center().justify_center()
       .when(off, (el) => el.opacity(0.35)).when(!off, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
       .when(on, (el) => el.bg(t.hover))
-      .tooltip(tip)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click(onClick)
-      .child(svg(`${ICONS}/${icon}.svg`).size(16).text_color(t.muted));
+      .child(svg(`${ICONS}/${icon}.svg`).size(16).text_color(t.muted)), tip);
   }
 
   // `primary` true is the accent button; "ghost" has no border.
