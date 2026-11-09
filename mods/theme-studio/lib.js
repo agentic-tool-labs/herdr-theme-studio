@@ -796,7 +796,8 @@ export function withButton(tree, on) {
 export const FOOTER_MOD = "workspace-chrome-studio";
 
 const SETTINGS_ROW = 'row("settings", "settings", "Settings", false, () => run("app.settings"))';
-const SETTINGS_DOT = /(\s*\.when\(Boolean\(updates\(\)\.app\.ready\), el => el\.child\(div\(\)\.size\(6\)\.rounded_full\(\)\.bg\(t\.accent\)\)\))\)/;
+// The update dot on Settings, whatever it draws (Herdr 0.1.14 moves it on the rail), and the paren closing the row.
+const SETTINGS_DOT = /(\s*\.when\(Boolean\(updates\(\)\.app\.ready\), el => el\.child\([^\n]*\)\))\)/;
 
 export const FOOTER_PATCH = "theme-studio footer patch v4";
 

@@ -248,7 +248,8 @@ export default class ThemeStudio extends View {
     cx.spawn(async (cx) => {
       const dirs = [`${HOME}/fonts`, `${home()}/Library/Fonts`, "/Library/Fonts"];
       const found = [];
-      for (const d of dirs) found.push(...(await fs.readdir(d).catch(() => [])));
+      // A folder Herdr doesn't let mods read (outside the home folder) throws rather than rejecting.
+      for (const d of dirs) found.push(...(await (async () => fs.readdir(d))().catch(() => [])));
       this.geistWeights = found.some((f) => /^Geist(-(Bold|SemiBold|Medium)|\[wght\]|-Variable)/i.test(f) && !/mono/i.test(f));
       cx.notify();
     });
@@ -283,8 +284,26 @@ export default class ThemeStudio extends View {
       if (this.glass.bg === "bloom") cx.spawn(async () => { this.glass.bloom = await this.renderBloom(this.glass).catch(() => this.glass.bloom); this.pushGlass(); });
       else if (this.glass.chrome < 1 || this.glass.opacity < 1) this.pushGlass();
     });
-    // Making a layout copy reopens the Studio on the copy; finish by adding the palette icon.
-    if (shared(K.addButton) && this.personal()) { setShared(K.addButton, null); this.setButton(true, cx); }
+    // A theme applied on Herdr's own layout can't set glass or the agents list there, and picking the
+    // theme in use again changes nothing, so the theme in use brings them to the person's copy:
+    // its glass to a new copy, its agents list to a copy the Studio never set one on.
+    if (this.personal()) {
+      const fresh = shared(K.addButton); // the first open on a new copy also adds the palette icon
+      if (fresh) setShared(K.addButton, null);
+      const name = settings().theme;
+      const glass = fresh ? this.partFull("glass", this.partValue(name, "glass")) : {};
+      const agents = !shared(K.agents) && this.partValue(name, "agents");
+      // One after the other: each rewrites the layout.
+      if (Object.keys(glass).length || agents || fresh) cx.spawn(async (cx) => {
+        if (Object.keys(glass).length || agents) {
+          this.glass = { ...this.glass, ...glass };
+          if (this.glass.bg === "bloom" && glass.bg) this.glass.bloom = await this.renderBloom(this.glass).catch(() => "");
+          if (agents) await this.writeAgents(cx, this.partFull("agents", agents)).catch((e) => this.say(String(e.message || e), "error", cx));
+          else this.pushGlass();
+        }
+        if (fresh) this.setButton(true, cx);
+      });
+    }
     // Commands, so keys.json (or `herdr-app do theme-studio.<command>`) can drive the Studio.
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); this.command(c, cx); cx.notify(); } });
   }
@@ -708,6 +727,8 @@ export default class ThemeStudio extends View {
   }
 
   changes() {
+    // The first update check runs while the Studio is still starting, before any draft exists.
+    if (!this.glassDraft) return { theme: 0, agents: 0, type: 0, colors: 0, glass: 0, details: 0 };
     const n = (o, skip) => Object.keys(o).filter((k) => k !== skip).length;
     const src = (p, k) => (p in this.srcDraft && !k ? 1 : 0);
     const c = { theme: this.themeDraft ? 1 : 0, agents: n(this.agentsDraft), type: n(this.draft), colors: n(this.colorDraft) + n(this.cursorDraft) + ("behind" in this.glassDraft ? 1 : 0), glass: n(this.glassDraft, "bloom") - ("behind" in this.glassDraft ? 1 : 0) };

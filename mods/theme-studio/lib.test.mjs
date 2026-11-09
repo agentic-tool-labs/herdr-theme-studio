@@ -184,6 +184,9 @@ assert.ok(pf.includes(FOOTER_PATCH) && pf.includes("render(cx) {\n    studioFit(
 assert.ok(pf.includes(".when(collapsed, el => el.child(studioRail(t)))\n      .child(row(\"machine\"))"), "the rail row sits between Settings and Add machine");
 assert.equal(patchFooter(pf), pf);
 assert.equal(patchFooter(pf.replace(FOOTER_PATCH, "old")), null);
+// Herdr 0.1.14's dot, placed apart on the rail
+const pf14 = patchFooter(chrome.replace("el.child(div().size(6).rounded_full().bg(t.accent))))", "el.child(collapsed ? ready.absolute().top(5).right(6) : ready)))"));
+assert.ok(pf14 && pf14.includes(": ready))).when(!collapsed, el => el.child(studioIcon(t))))\n        .when(collapsed, el => el.child(studioRail(t)))"));
 
 // contrast preview lift and the ligature breaker
 assert.equal(liftContrast("#ffffff", "#000000", 7), "#ffffff");
