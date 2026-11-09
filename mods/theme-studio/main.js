@@ -27,7 +27,7 @@ const tipCard = (t, id, el, text, grow = false) => {
 };
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved", agentsWas: "theme-studio.agents-was" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved", agentsWas: "theme-studio.agents-was", iconOff: "theme-studio.icon-off" };
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -1129,7 +1129,8 @@ export default class ThemeStudio extends View {
       if (glass) this.syncControls();
       cx.notify();
     }
-    if (fresh) this.setButton(true, cx);
+    // The palette icon is on unless it was turned off here: a copy made some other way gets it too.
+    if (fresh || (!shared(K.iconOff) && !hasFooterIcon(layout()) && withFooterIcon(layout(), true))) this.setButton(true, cx);
   }
 
   // The sidebar's agents list when it's another mod than Herdr's or the Studio's (agents-plus, say).
@@ -1243,6 +1244,7 @@ export default class ThemeStudio extends View {
   }
 
   setButton(on, cx) {
+    setShared(K.iconOff, on ? null : true);
     cx.spawn((cx) => this.guard(cx, on ? "Adding the palette icon" : "Removing the palette icon", async () => {
       // Herdr doesn't reload a mounted clone it was told to write, so a rewrite remounts the footer.
       if (on && (await this.ensureFooterClone(cx)) && hasFooterIcon(layout())) {
