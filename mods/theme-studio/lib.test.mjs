@@ -405,6 +405,7 @@ const SHIPPED = ["main", "terminals", "win98"];
 assert.equal(copyName("main"), "theme-studio"); assert.equal(copyName("win98"), "theme-studio-win98");
 assert.deepEqual(olderCopy("main-studio", SHIPPED), ["main-studio", "theme-studio"]);
 assert.deepEqual(olderCopy("win98-studio", SHIPPED), ["win98-studio", "theme-studio-win98"]);
+assert.deepEqual(olderCopy("poc-layout", SHIPPED), ["poc-layout", "theme-studio"]);
 assert.equal(olderCopy("theme-studio", SHIPPED), null); assert.equal(olderCopy("mine-studio", SHIPPED), null); assert.equal(olderCopy("main", SHIPPED), null);
 assert.deepEqual(Object.keys(JSON.parse(moveKeySection('{"global":{},"layout:main-studio":{"a":"b"},"x":1}', "main-studio", "theme-studio"))), ["global", "layout:theme-studio", "x"]);
 assert.equal(moveKeySection('{"global":{}}', "main-studio", "theme-studio"), null);

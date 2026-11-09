@@ -626,8 +626,14 @@ function studioName(address) {
 
 /** The Studio's copy of one of Herdr's layouts: theme-studio for main, theme-studio-<layout> for the others. */
 export const copyName = (from) => (from === "main" ? "theme-studio" : `theme-studio-${from}`);
-/** What an older Studio called that copy (<layout>-studio), as [old name, new name], else null. */
-export const olderCopy = (name, shipped) => { const m = /^(.+)-studio$/.exec(name || ""); return m && shipped.includes(m[1]) ? [name, copyName(m[1])] : null; };
+// Names a Studio copy went by before theme-studio, besides <layout>-studio: the layout each copies.
+const OLD_COPIES = { "poc-layout": "main" };
+/** What an older Studio called that copy, as [old name, new name], else null. */
+export const olderCopy = (name, shipped) => {
+  if (Object.hasOwn(OLD_COPIES, name || "")) return [name, copyName(OLD_COPIES[name])];
+  const m = /^(.+)-studio$/.exec(name || "");
+  return m && shipped.includes(m[1]) ? [name, copyName(m[1])] : null;
+};
 /** keys.json text with a layout's own section moved to another name, or null when it has none. */
 export function moveKeySection(text, from, to) {
   let j; try { j = JSON.parse(text); } catch { return null; }
