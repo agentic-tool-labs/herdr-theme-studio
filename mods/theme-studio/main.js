@@ -118,6 +118,10 @@ const MIN_SIZE = 8, MAX_SIZE = 32;
 const CONTRASTS = [1, 1.6, 3, 4.5, 7];
 
 const sleep = (cx, ms) => cx.sleep(ms);
+// Herdr zooms every length a mod writes but reports the pointer on screen, so a pointer position used
+// as a length (or against one) is divided by the zoom first.
+const zoom = () => Number(settings().zoom) || 1;
+const unzoom = (p) => p && { x: p.x / zoom(), y: p.y / zoom() };
 const ownedThemes = () => shared(K.owned) || [];
 const themePath = (name) => `${HOME}/themes/${name}.json`;
 // What a Studio theme holds beside its colors file: { type, glass, cursor }, by theme name.
@@ -1056,7 +1060,7 @@ export default class ThemeStudio extends View {
     let mine = false, since = 0, lastW = null, setW = null, stillAt = 0;
     const fold = (px, folded) => { setW = px; setShared("sidebar.collapsed", folded); run("layout.resize", { id: "sidebar", px }); };
     cx.timer.every(100, () => {
-      const tree = layout() || {}, sb = findNode(tree, "sidebar"), p = window.mouse_position(), now = Date.now();
+      const tree = layout() || {}, sb = findNode(tree, "sidebar"), p = unzoom(window.mouse_position()), now = Date.now();
       if (!sb) return;
       if (autoHideMode(tree) === "hidden") { // gone entirely: the window's left edge shows it
         const want = sb.hidden ? p.x >= 0 && p.x <= 4 : mine && p.x > ((sb.size && sb.size.px) || 268) + 32;
@@ -2796,7 +2800,7 @@ export default class ThemeStudio extends View {
   beginDrag(drag, cx, e) {
     cx.stop_propagation();
     // The chip stays under the pointer at the spot it was grabbed.
-    this.grab = (e && e.local_position) || { x: 12, y: 12 };
+    this.grab = (e && e.local_position) || { x: 12 * zoom(), y: 12 * zoom() }; // on screen, like the pointer
     this.drag = drag; this.dropAt = null;
     cx.notify();
   }
@@ -2829,7 +2833,8 @@ export default class ThemeStudio extends View {
     this.cardSel = { row: at.row, i };
   }
   dragGhost(t) {
-    return div().absolute().left(this.mouse.x - this.grab.x).top(this.mouse.y - this.grab.y).h(24).px(8).rounded(6).flex().items_center()
+    const m = unzoom(this.mouse), g = unzoom(this.grab);
+    return div().absolute().left(m.x - g.x).top(m.y - g.y).h(24).px(8).rounded(6).flex().items_center()
       .bg(t.raised).border_1().border_color(t.accent).text_size(11.5).text_color(t.foreground).shadow_lg()
       .child(this.itemName(this.drag.item));
   }
