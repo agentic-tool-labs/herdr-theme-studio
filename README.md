@@ -323,7 +323,9 @@ them along a row to reorder, or back onto the palette to take them off. The item
 - **+ Label item**: a value from a Herdr terminal label (below), drawn as text or as a pill.
 
 A row works like a web flex row: **Wrap**, **Justify** (start, center, between, end), **Gap**, and
-**Under the name** to indent it past the icon. Each item has its own **Text size**, **Color** and
+**Under the name** to indent it past the icon. Every item has **Align** (Left, Center or Right: it
+moves along the row, taking the items after it when Right, or aligns its own text when it grows) and
+**Vertical** (Top, Middle or Bottom in the row). Each item has its own **Text size**, **Color** and
 **Weight** (each with a Reset), plus **Grow**, **Truncate**, **Max width**, **Style** (whose look it
 starts from: Auto, Name, Detail or Accent) and, for status, the badge. **Start from** sets up the rows: One line, Two lines, Wraps (two lines only when the name
 won't fit), or Named (your name on top, Claude Code's title under it).

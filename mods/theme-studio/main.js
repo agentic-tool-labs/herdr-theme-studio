@@ -2968,6 +2968,9 @@ export default class ThemeStudio extends View {
     return v_flex().gap(2)
       .child(head(this.itemName(it, defs), (_e, cx) => { const { row, i } = sel; this.cardSel = null; this.editCard((c) => c.rows[row].items.splice(i, 1), cx); }))
       .when(it.kind === "status", (el) => el.child(sw("ci-badge", "\"Needs you\" badge", it.badge !== false, (_e, cx) => this.editItem({ badge: it.badge === false }, cx))))
+      // Every item: where it sits along its row and in the row's height.
+      .child(this.stacked(t, "Align", this.seg("ci-align", [["start", "Left"], ["center", "Center"], ["end", "Right"]], it.align || "start", t, (v, cx) => this.editItem({ align: v === "start" ? undefined : v }, cx), true)))
+      .child(this.stacked(t, "Vertical", this.seg("ci-valign", [["top", "Top"], ["middle", "Middle"], ["bottom", "Bottom"]], it.valign || "middle", t, (v, cx) => this.editItem({ valign: v === "middle" ? undefined : v }, cx), true)))
       .when(hasLook, (el) => el.child(look))
       .when(isTextItem(it), (el) => el
         .child(sw("ci-grow", "Grow", !!it.grow, (_e, cx) => this.editItem({ grow: !it.grow }, cx)))

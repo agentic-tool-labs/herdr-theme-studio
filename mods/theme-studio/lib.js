@@ -461,7 +461,7 @@ herdr-app do mod.open '{"name":"theme-studio"}'; sleep 1.5; herdr-app do mod.ope
 
 // --- Card designer ------------------------------------------------------------------------------
 // A card is rows of items, laid out like CSS flexbox:
-//   { rows: [{ items: [{ kind, grow, truncate, max, role, badge, id, size, color, weight }], wrap, justify, gap, indent }] }
+//   { rows: [{ items: [{ kind, grow, truncate, max, role, badge, id, size, color, weight, align, valign }], wrap, justify, gap, indent }] }
 // An item's size, color and weight are its own; left unset, they come from its role (name, detail, time).
 // A label item ({ kind: "label", id }) shows a Herdr terminal label. Its look is defined once, in
 // the settings' `labels`: [{ id, key, style: "text" | "pill", prefix, color, missing: "hide" | "text", text }].
@@ -521,6 +521,15 @@ export function studioDrawCard(card, d, S, t, ui) {
     el = it.truncate === false ? el.whitespace_nowrap().flex_none() : el.truncate();
     return it.max > 0 ? el.max_w(it.max) : el;
   };
+  // Where an item sits in its row. align: center or end pushes it along the row (and, for end, what
+  // follows it), or aligns its text when it grows into the spare width. valign: top, middle or bottom.
+  const place = (el, it) => {
+    if (!el) return el;
+    if (it.align === "center") el = it.grow ? el.text_center() : el.mx_auto();
+    else if (it.align === "end") el = it.grow ? el.text_right() : el.ml_auto();
+    const v = { top: "self_start", middle: "self_center", bottom: "self_end" }[it.valign];
+    return v ? el[v]() : el;
+  };
   const seen = new Set();
   let first = true;
   const item = (it, wrap) => {
@@ -545,7 +554,7 @@ export function studioDrawCard(card, d, S, t, ui) {
   const lead = (((card.rows || [])[0] || {}).items || []).reduce((acc, it) => acc.done || isText(it) ? { ...acc, done: true }
     : { done: false, px: acc.px + (it.kind === "icon" ? it.size || S.icon : it.kind === "status" ? 16 : 0) + gap(card.rows[0]) }, { done: false, px: 0 }).px;
   function isText(it) { return ["name", "title", "space", "machine", "label"].includes(it.kind); }
-  const built = (card.rows || []).map((r) => (r.items || []).map((it) => ({ el: item(it, !!r.wrap), text: isText(it) })).filter((x) => x.el));
+  const built = (card.rows || []).map((r) => (r.items || []).map((it) => ({ el: place(item(it, !!r.wrap), it), text: isText(it) })).filter((x) => x.el));
   // The first row always names the agent: when its texts are all empty (a Space under its own
   // header), the next text moves up.
   if (built.length > 1 && !built[0].some((x) => x.text)) {

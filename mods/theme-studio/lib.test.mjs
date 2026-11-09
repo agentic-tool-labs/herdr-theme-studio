@@ -304,6 +304,13 @@ const own = studioDrawCard({ rows: [{ items: [{ kind: "title", size: 15, color: 
 const tc = findText(own, D.title).calls, sc = findText(own, D.space).calls;
 assert.ok(tc.some((c) => c[0] === "text_size" && c[1] === 15) && tc.some((c) => c[0] === "text_color" && c[1] === "#ff0000") && tc.some((c) => c[0] === "font_bold"), "the item's own look");
 assert.ok(sc.some((c) => c[0] === "text_size" && c[1] === AGENTS_DEFAULT.detailText) && sc.some((c) => c[0] === "text_color" && c[1] === "#777777"), "unset: the role's look (detail)");
+// item alignment: pushed along the row, its text aligned when it grows, and placed in the row's height
+const placed = studioDrawCard({ rows: [{ items: [{ kind: "title", align: "end", valign: "top" }, { kind: "space", grow: true, align: "center" }, { kind: "machine" }] }] },
+  { ...D, machine: "work-mac" }, { ...AGENTS_DEFAULT }, { foreground: "#ffffff", muted: "#999999", dim: "#777777" }, fake);
+const has = (txt, m) => findText(placed, txt).calls.some((c) => c[0] === m);
+assert.ok(has(D.title, "ml_auto") && has(D.title, "self_start") && !has(D.title, "text_right"), "right and top: pushed along, placed at the top");
+assert.ok(has(D.space, "text_center") && !has(D.space, "mx_auto"), "a growing item centers its text");
+assert.ok(!["ml_auto", "mx_auto", "text_center", "text_right", "self_start", "self_center", "self_end"].some((m) => has("work-mac", m)), "unset: where the row puts it");
 console.log("lib.test: card designer passed");
 
 // updates: version order, the once-per-version notice, installs, and the wait while editing
