@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts, copyName, olderCopy, moveKeySection, agentsListMod, withAgentsListMod } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts, copyName, olderCopy, moveKeySection, bindKey, agentsListMod, withAgentsListMod } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -416,6 +416,21 @@ assert.deepEqual(olderCopy("poc-layout", SHIPPED), ["poc-layout", "theme-studio"
 assert.equal(olderCopy("theme-studio", SHIPPED), null); assert.equal(olderCopy("mine-studio", SHIPPED), null); assert.equal(olderCopy("main", SHIPPED), null);
 assert.deepEqual(Object.keys(JSON.parse(moveKeySection('{"global":{},"layout:main-studio":{"a":"b"},"x":1}', "main-studio", "theme-studio"))), ["global", "layout:theme-studio", "x"]);
 assert.equal(moveKeySection('{"global":{}}', "main-studio", "theme-studio"), null);
+assert.deepEqual(JSON.parse(bindKey('{"global":{"ctrl-shift-y":"mod.open:theme-studio"}}', "ctrl-shift-a", "mod.open:x")).global, { "ctrl-shift-y": "mod.open:theme-studio", "ctrl-shift-a": "mod.open:x" });
+assert.deepEqual(JSON.parse(bindKey("{}", "ctrl-shift-a", "mod.open:x")).global, { "ctrl-shift-a": "mod.open:x" });
+assert.equal(bindKey('{"global":{"ctrl-shift-a":"tab.new"}}', "ctrl-shift-a", "mod.open:x"), null); // taken
+assert.equal(bindKey('{"global":{"alt-a":"mod.open:x"}}', "ctrl-shift-a", "mod.open:x"), null); // already has a key
+assert.equal(bindKey(null, "ctrl-shift-a", "mod.open:x"), null);
+assert.equal(bindKey("{oops", "ctrl-shift-a", "mod.open:x"), null);
+{ // an agents list a layout floats, or nests in its own blocks, is still the one swapped
+  const floated = { id: "root", type: "row", children: [{ id: "main", type: "column", children: [] }], floating: [{ id: "board", content: { mod: "agents" }, edge: "left" }] };
+  assert.equal(agentsListMod(floated), "agents");
+  assert.equal(withAgentsMod(floated, true).floating[0].content.mod, AGENTS_MOD);
+  assert.equal(withAgentsListMod(floated, "agents").floating[0].content.mod, "agents");
+  const nested = { id: "root", type: "row", children: [{ id: "theirs", type: "column", children: [{ id: "hdr", type: "block", content: { mod: "their-header" } }, { id: "list", type: "block", content: { mod: "agents-plus" } }] }] };
+  assert.equal(agentsListMod(nested), "agents-plus");
+  assert.equal(withAgentsListMod(nested, "agents").children[0].children[1].content.mod, "agents");
+}
 assert.equal(moveKeySection("not json", "a", "b"), null);
 
 // the sidebar's agents list mod, and swapping it
@@ -426,3 +441,11 @@ assert.equal(agentsListMod(swapped), "agents"); assert.deepEqual(swapped.childre
 assert.equal(agentsListMod(sideTree), "agents-plus", "the original tree is untouched");
 assert.equal(agentsListMod({ id: "root", children: [{ id: "list", content: { mod: "agents-studio" } }] }), "agents-studio");
 assert.equal(agentsListMod({ id: "root", children: [] }), null);
+{ // popups glass: the layout's popover gets the alpha, and reads back
+  const base = { chrome: "#101820", background: "#000000", popover: "#203040" };
+  const t = applyGlass({ id: "root", type: "row", children: [] }, { ...GLASS_DEFAULT, popups: 0.8 }, base);
+  assert.equal(t.colors.popover, "#203040cc");
+  assert.equal(readGlass(t).popups, 0.8);
+  assert.equal(applyGlass(t, { ...GLASS_DEFAULT }, base).colors, undefined); // solid again: the override goes
+  console.log("lib.test: popups passed");
+}

@@ -57,6 +57,7 @@ overwrite.
 ## Opening it
 
 - **⌃⇧Y** toggles the window.
+- **⌃⇧A** applies your theme to the layout you're on, without opening the window (see [Settings](#settings)).
 - **The palette icon beside Settings** in the sidebar footer. Herdr's Settings screen can't take
   extra sections (Herdr rewrites it on every start), and its sidebar mod and built-in layouts can't
   be edited. So the Studio makes your own copy of the layout (`theme-studio` for Herdr's main layout) and a patched
@@ -94,6 +95,9 @@ description, author, link and any store badges. Every action is on the card itse
     Defaults, and the theme in use.
   - **Duplicate…**: your own copy under a name you type. It starts as a free name
     (`dune-copy`, then `dune-copy-2`), and a name that's taken gets a number.
+  - **Apply to a layout…**: puts this theme, with its whole look, on a layout you pick: one of
+    yours, or the one shown even when it's Herdr's (a copy is made). One that isn't shown changes
+    in its file and shows it when you switch there; the layout you're on stays as it is.
   - **Copy JSON**: the theme in Herdr's format, for sharing.
   - **Delete…**: yours, when it's not in use.
 
@@ -270,6 +274,7 @@ The sample terminal under the preview shows each pick at once. Herdr rereads `se
 | Start from: Solid, Tinted, Frosted | Starting points that set everything below at once. |
 | Window background: Theme, Gradient, Bloom, Wallpaper, Image | What shows behind the panes. **Gradient** uses two colors you pick and an angle. **Bloom** uses a base color and up to eight soft glows, with a strength for all of them. **Edit the glows…** opens the bloom editor (below). **Wallpaper** is your desktop picture, blurred. **Image**: **Choose…** opens the macOS file picker, or you can drop a picture or type a path. A picture from outside Herdr's folder is copied into `backgrounds/`. |
 | Sidebar and bar | How much of the background shows through the sidebar and tab bar. They keep the theme's chrome color. |
+| Popups | How much shows through every popup: Herdr's palette, menus, dialogs and notifications, and mod windows. They keep the theme's popover color. A mod window that paints its own background stays solid. What's under a popup shows through too, terminal text included, so keep it high. |
 | Terminal | How much shows through the terminals. They keep the theme's background color. |
 | Corner radius, Margin, Gap | The pane cards' shape and spacing. |
 
@@ -369,6 +374,7 @@ they apply at once.
 
 | Option | What it does |
 |---|---|
+| Apply to this layout | Herdr keeps a theme for each layout, and applying a theme changes only the layout shown, so a layout you switch to keeps its own theme, glass and agents list. This puts the theme you last applied in the Studio on the layout you're on, with its whole look. **⌃⇧A** does the same from anywhere: it opens a small helper mod (`mods/theme-studio-apply`, which the Studio installs and binds once; remove the binding and it stays removed), and the helper hands off to the Studio. On one of Herdr's own layouts the first press makes your copy and the second applies the theme to it. The agents list is found wherever the layout puts it: nested in the layout's own blocks or floating, and each layout keeps its own agents list look, as it keeps its own theme. |
 | Auto-hide | Keeps the sidebar out of the way until you need it. Rest the pointer on it and it opens, the terminals making room; move well past it and it folds back a moment later. A sidebar you open with Herdr's own fold button stays open, and dragging its edge never fights you. |
 | Folds to: Minimal, Hidden | **Minimal** folds it to a 52px rail, room for each space's and agent's number and status dot. **Hidden** takes it away entirely; the window's left edge brings it back. |
 | Beside Settings | The palette icon in the sidebar footer that opens the Studio. It shows a dot when an update is ready. |
@@ -415,10 +421,10 @@ Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-ap
 with the Studio open:
 
 Library: `select=<name>` (preview; `apply` uses it) · `edit=<name>` · `copy=<from>:<new>` · `rename=<from>:<new>` · `delete-theme=<name>` · `export=<name>` (JSON to the clipboard) · `view=themes|import|settings` · `menu=more|close|<menu id>` · `hover=<name>` (show a card's actions) · `default=dark|light:<part>:<theme|>` ·
-settings: `autohide=rail|hidden|off` · `button=on|off` · `update=check|install` · `autoupdate=on|off` ·
+settings: `apply-layout[=<theme>[:<layout>]]` · `layout-ask=<theme>` (the Apply to a layout bar) · `autohide=rail|hidden|off` · `button=on|off` · `update=check|install` · `autoupdate=on|off` ·
 editor: `tab=<colors|type|glass|agents|details>` · `meta=<description|author|url>:<text>` · `back` · `save` (or `apply`) · `discard` · `font=<family>` · `ui-font=<family>` · `size=<n>` (these three apply at once) ·
 staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<token>` · `stage=<key>:<value>` · `glass=Solid|Tinted|Frosted` ·
-`bg=theme|gradient|bloom|frost|image` · `opacity|chrome|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase>:<hex|>` · `bloom` (the bloom editor; `bloom=close`) · `glow-add` · `glow-remove=<i>` · `glows=<json list>` ·
+`bg=theme|gradient|bloom|frost|image` · `opacity|chrome|popups|radius|margin|gap|angle|glowIntensity=<n>` · `behind=<token|hex|>` · `image=<path>` (no path: open the picker) · `glass-color=<from|to|bloomBase>:<hex|>` · `bloom` (the bloom editor; `bloom=close`) · `glow-add` · `glow-remove=<i>` · `glows=<json list>` ·
 `cursor=block|underline|bar` · `cursor-blink=on|off` · `agents=Comfortable|Compact|Dense` · `agents-row|text|icon|header=<n>` · `agents-time|headers|icons|badge=on|off` · `agents-lines=one|two|auto` · `agents-lead=space|session` · `agents-statusSide=left|right` · `agents-weight=normal|medium|semibold|bold` · `agents-radius|pad|space|detailText=<n>` · `agents-show=title|name|both` · `card=one|two|auto|both` (Start from) · `card-select=<row>.<i>` (or `<row>`) · `card-item=<key>:<value>` (the selected item) · `source=<part>:own|default|from:<theme>` · `copy-part=<part>:<theme>` · `agents-nameColor|detailColor|timeColor|cardColor|borderColor|selectedColor|hoverColor=<hex|>` · `pick=<tok:token|glass:key>` (select a color for the picker) ·
 `copy-layout` · `import=<name>` (from the clipboard) · `import-file=<path>` · `revert` ·
 GitHub: `github=<link>` (preview a file, list a folder, repo or gist) · `github-browse` · `github-pick=<name>` (a theme, file or folder in the list) · `remote=install|cancel` (the theme in preview) · `import-name=<name>` ·
@@ -441,6 +447,7 @@ mods/theme-studio/
   frost.jxa.js     wallpaper blur (osascript -l JavaScript)
   bloom.jxa.js     bloom background render (base color plus its glows)
   palette.svg      sidebar icon
+  helper/          the ⌃⇧A helper mod, copied to mods/theme-studio-apply
   icons/           the window's own icons (Lucide)
   presets/         17 theme files (5 with a `studio` block of parts and details) + SOURCES.md
   backgrounds/     pictures the shipped themes use

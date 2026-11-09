@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, HoverCard, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes as herdrThemes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts, copyName, olderCopy, moveKeySection, agentsListMod, withAgentsListMod } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts, copyName, olderCopy, moveKeySection, bindKey, agentsListMod, withAgentsListMod } from "./lib.js";
 
 const HOME = appHome();
 // Herdr's themes() costs about a millisecond a call, and drawing the library asks for it per card;
@@ -27,7 +27,9 @@ const tipCard = (t, id, el, text, grow = false) => {
 };
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved", agentsWas: "theme-studio.agents-was", iconOff: "theme-studio.icon-off" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved", agentsWas: "theme-studio.agents-was", iconOff: "theme-studio.icon-off", apply: "theme-studio.apply", applyKey: "theme-studio.apply-key", mine: "theme-studio.my-theme", agentsBy: "theme-studio.agents-by" };
+// ctrl-shift-a opens this helper, which asks the Studio to apply the theme to the layout shown.
+const APPLY_MOD = "theme-studio-apply", APPLY_KEY = "ctrl-shift-a";
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -101,7 +103,7 @@ const GLASS_PRESETS = {
   Tinted: { bg: "gradient", angle: 165, opacity: 0.86, chrome: 0.7, radius: 10, gap: 8, margin: 10 },
   Frosted: { bg: "frost", opacity: 0.78, chrome: 0.55, radius: 12, gap: 10, margin: 12 },
 };
-const SLIDERS = { opacity: [0.3, 1, 0.01], chrome: [0.2, 1, 0.01], radius: [0, 20, 1], gap: [0, 24, 1], margin: [0, 32, 1], angle: [0, 360, 5], glowIntensity: [0, 200, 5] };
+const SLIDERS = { opacity: [0.3, 1, 0.01], chrome: [0.2, 1, 0.01], popups: [0.3, 1, 0.01], radius: [0, 20, 1], gap: [0, 24, 1], margin: [0, 32, 1], angle: [0, 360, 5], glowIntensity: [0, 200, 5] };
 // Glass fields the bloom picture is drawn from: changing one re-renders it.
 const BLOOM_KEYS = ["bg", "bloomBase", "glowA", "glowB", "glowC", "glowIntensity", "glows"];
 // A bundled preset's colors before Herdr has derived the rest: enough for the mock window.
@@ -272,7 +274,9 @@ export default class ThemeStudio extends View {
         } catch {}
       }
       cx.notify();
-      if (this.bring) await this.bringLook(cx, this.bring.fresh).catch((e) => this.say(String(e.message || e), "error", cx));
+      this.presetsReady = true;
+      if (this.applyAsked) await this.applyToLayout(cx, true);
+      else if (this.bring) await this.bringLook(cx, this.bring.fresh).catch((e) => this.say(String(e.message || e), "error", cx));
       await this.scanThemeFiles(cx);
       await this.checkCursorHook(cx);
       if (this.glass.bg === "frost") await this.refreshFrost(cx, false);
@@ -282,6 +286,8 @@ export default class ThemeStudio extends View {
     cx.timer.every(1000, (cx) => {
       this.releaseLook();
       if (this.glassFor !== shared("layout")) { this.syncGlass(); cx.notify(); }
+      const asked = this.presetsReady && shared(K.apply);
+      if (asked) { setShared(K.apply, null); if (Date.now() - asked < 15000) cx.spawn((cx) => this.applyToLayout(cx)); }
       const now = settings().theme;
       if (now === this.glassTheme) return;
       this.glassTheme = now;
@@ -302,6 +308,10 @@ export default class ThemeStudio extends View {
       this.bring = { fresh: !!shared(K.addButton) }; // the first open on a new copy also adds the palette icon
       if (this.bring.fresh) setShared(K.addButton, null);
     }
+    // Opened by ctrl-shift-a's helper: apply once the presets are read, then close.
+    const asked = shared(K.apply);
+    if (asked) { setShared(K.apply, null); this.applyAsked = Date.now() - asked < 15000; }
+    cx.spawn(() => this.ensureApplyKey().catch(() => {}));
     // Commands, so keys.json (or `herdr-app do theme-studio.<command>`) can drive the Studio.
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); this.command(c, cx); cx.notify(); } });
   }
@@ -351,12 +361,14 @@ export default class ThemeStudio extends View {
     else if (verb === "copy-part") { const [part, from] = arg.split(":"); if (PARTS.includes(part)) this.copyPart(part, from, cx); }
     else if (verb === "default") { const [mode, part, name] = arg.split(":"); if (PARTS.includes(part) && (mode === "dark" || mode === "light")) this.setDefault(mode, part, name || null, cx); }
     else if (verb === "hover") this.hoverCard = arg || null; // a theme card's hover actions, for screenshots
+    else if (verb === "layout-ask") this.ask = arg ? { kind: "layout", name: arg } : null; // a card's Apply to a layout… bar
     else if (verb === "font-menu") { this.fontOpen = arg === "close" ? null : arg === "ui" ? "ui_font" : "font"; cx.notify(); }
     else if (verb === "cancel") this.cancelAll(cx);
     else if (verb === "glass" && GLASS_PRESETS[arg]) this.stageGlass({ ...GLASS_PRESETS[arg] }, cx);
     else if (verb === "bg") this.stageGlass({ bg: arg }, cx);
     else if (verb in SLIDERS && !Number.isNaN(num)) this.stageGlass({ [verb]: num }, cx);
     else if (verb === "copy-layout") this.makeCopy(cx);
+    else if (verb === "apply-layout") { const [n, to] = arg.split(":"); cx.spawn((cx) => this.applyToLayout(cx, false, n || undefined, to || undefined)); } // apply-layout[=<theme>[:<layout>]]
     else if (verb === "revert") this.revert(cx);
     else if (verb === "import") this.importTheme(cx, cx.read_from_clipboard() || "", arg);
     else if (verb === "import-file") this.importFile(arg, cx);
@@ -448,7 +460,14 @@ export default class ThemeStudio extends View {
     await this.ensureBackup();
     if (!(await this.waitFor(cx, () => themes().some((t) => t.name === name)))) throw new Error(`Herdr hasn't picked up ${name} yet; try again in a moment`);
     run("app.theme", { name });
+    setShared(K.mine, name);
     await this.waitFor(cx, () => settings().theme === name, 3000);
+  }
+
+  // Herdr keeps the theme pick per layout, so "your theme" is the one last applied here, while it exists.
+  myTheme() {
+    const name = shared(K.mine);
+    return name && themes().some((t) => t.name === name) ? name : settings().theme;
   }
 
   // --- themes ----------------------------------------------------------------
@@ -724,7 +743,7 @@ export default class ThemeStudio extends View {
 
   // The opaque glass colors for applyGlass: the theme's own chrome and terminal colors.
   baseColors(g = this.glass, c = this.themeColors()) {
-    return { chrome: normHex(c.chrome).slice(0, 7), background: normHex(c.background).slice(0, 7) };
+    return { chrome: normHex(c.chrome).slice(0, 7), background: normHex(c.background).slice(0, 7), popover: normHex(c.popover || c.raised || c.background).slice(0, 7) };
   }
 
   changes() {
@@ -762,7 +781,8 @@ export default class ThemeStudio extends View {
   }
 
   // The agents list as the clone shows it now, and with what's staged (a picked theme's own, then edits).
-  agentsNow() { return { ...AGENTS_DEFAULT, ...(shared(K.agents) || {}) }; }
+  // Each layout keeps its own agents list look (as Herdr keeps its own theme); the shared one is the fallback.
+  agentsNow() { return { ...AGENTS_DEFAULT, ...((shared(K.agentsBy) || {})[shared("layout")] || shared(K.agents) || {}) }; }
   agentsShown() {
     return { ...(this.themeAgents() || this.agentsNow()), ...this.agentsDraft };
   }
@@ -934,6 +954,7 @@ export default class ThemeStudio extends View {
       await sleep(cx, 1200);
     }
     setShared(K.agents, a);
+    setShared(K.agentsBy, { ...(shared(K.agentsBy) || {}), [shared("layout")]: a });
     this.pushGlass();
   }
 
@@ -982,8 +1003,7 @@ export default class ThemeStudio extends View {
 
   // Renders the bloom picture for `g` into backgrounds/ and returns its path. Old renders other than
   // the applied one and this one are deleted.
-  async renderBloom(g) {
-    const c = this.themeColors();
+  async renderBloom(g, c = this.themeColors()) {
     const hex = (k) => this.glassHex(k, g, c);
     await fs.mkdir(`${HOME}/backgrounds`, { recursive: true }).catch(() => {});
     const rel = `backgrounds/studio-bloom-${Date.now()}.jpg`;
@@ -1115,7 +1135,7 @@ export default class ThemeStudio extends View {
   // all its glass to a new copy; its picture when the one shown isn't it (or is gone: an older Studio's
   // path); its agents list whenever the one here isn't the theme's. A theme without an agents list
   // leaves the one here alone. Each rewrites the layout, so one after the other.
-  async bringLook(cx, fresh) {
+  async bringLook(cx, fresh, icon = fresh) {
     const name = settings().theme;
     const theme = this.partFull("glass", this.partValue(name, "glass")), now = readGlass(layout());
     const pic = theme.bg === "image" && !!theme.image && (now.bg !== "image" || now.image !== theme.image || !(await fs.exists(`${HOME}/${now.image}`)));
@@ -1134,7 +1154,85 @@ export default class ThemeStudio extends View {
       cx.notify();
     }
     // The palette icon is on unless it was turned off here: a copy made some other way gets it too.
-    if (fresh || (!shared(K.iconOff) && !hasFooterIcon(layout()) && withFooterIcon(layout(), true))) this.setButton(true, cx);
+    if (icon || (!shared(K.iconOff) && !hasFooterIcon(layout()) && withFooterIcon(layout(), true))) this.setButton(true, cx);
+  }
+
+  // The theme in use's whole look (glass and agents list) on the layout shown. Applying a theme only
+  // touches the layout shown, so this is for after switching. Herdr's own layouts get a copy first.
+  async applyToLayout(cx, close = false, name = this.myTheme(), target = shared("layout")) {
+    if (target !== shared("layout")) return this.guard(cx, `Applying ${name} to ${target}`, async (cx) => {
+      await this.writeLookTo(cx, name, target);
+      this.say(`${name} is on ${target}: switch to it to see`, "success", cx);
+    });
+    if (!this.personal()) return this.makeCopy(cx);
+    const here = target;
+    let ok = false;
+    await this.guard(cx, `Applying ${name} to ${here}`, async (cx) => {
+      if (settings().theme !== name) { await this.ensureThemeFile(cx, name); await this.useTheme(cx, name); }
+      await this.bringLook(cx, true, !!(this.bring && this.bring.fresh));
+      ok = true;
+      this.say(`${name} is on ${here}`, "success", cx);
+    });
+    if (!ok || !close) return;
+    notify({ title: `${name} is on ${here}`, level: "success" });
+    closeOverlay(props().overlay);
+  }
+
+  // A theme's whole look written into a layout that isn't shown: Herdr shows it on the switch there.
+  // Its theme goes in the half (light or dark) the theme is, as app.theme does on the shown one.
+  async writeLookTo(cx, name, target) {
+    const path = `${HOME}/layouts/${target}.json`, text = await readTextFile(path);
+    if (!text) throw new Error(`Can't find the layout ${target}`);
+    let tree = JSON.parse(text.replace(/^\uFEFF/, ""));
+    await this.ensureThemeFile(cx, name);
+    const was = tree.theme, pair = was && typeof was === "object" ? was : { light: was || "paper", dark: was || "graphite" };
+    tree.theme = { ...pair, [this.isLight(name) ? "light" : "dark"]: name };
+    const colors = (themes().find((x) => x.name === name) || {}).colors || this.themeColors();
+    const g = { ...readGlass(tree), ...((shared(K.glassExtra) || {})[target] || {}), ...this.partFull("glass", this.partValue(name, "glass")) };
+    if (g.bg === "bloom") g.bloom = await this.renderBloom(g, colors).catch(() => "");
+    if (g.bg === "frost") g.frost = this.glass.frost || g.frost;
+    if (g.radius > 0) await this.ensureRoundedHeader(cx).catch(() => {});
+    tree = applyGlass(tree, g, this.baseColors(g, colors));
+    const own = this.partValue(name, "agents");
+    if (own) {
+      const a = this.partFull("agents", own), custom = Object.keys(AGENTS_DEFAULT).some((k) => a[k] !== AGENTS_DEFAULT[k]);
+      if (custom) await this.ensureAgentsClone(cx);
+      setShared(K.agentsBy, { ...(shared(K.agentsBy) || {}), [target]: a });
+      tree = withAgentsMod(tree, custom);
+    }
+    if (!shared(K.iconOff) && !hasFooterIcon(tree) && (await fs.exists(`${HOME}/mods/${FOOTER_MOD}/main.js`))) tree = withFooterIcon(tree, true) || tree;
+    await writeTextFile(path, JSON.stringify(tree, null, 2) + "\n", text);
+  }
+
+  // A bundled theme not used yet has no file in themes/ for Herdr to find.
+  async ensureThemeFile(cx, name) {
+    const p = this.presets.find((x) => x.name === name);
+    if (p) await this.installPreset(p);
+    await this.waitFor(cx, () => themes().some((x) => x.name === name));
+  }
+
+  // Where a theme can go: your own layouts, and the one shown even when it's Herdr's (a copy is made).
+  layoutTargets() {
+    const here = shared("layout");
+    return [...new Set([...(this.personal() ? [] : [here]), ...layouts().filter((n) => !SHIPPED_LAYOUTS.includes(n))])];
+  }
+
+  // The helper ctrl-shift-a opens (a key can only open a mod, and Herdr refuses commands to a closed
+  // one), kept in step with this release's copy, and the key: bound once, so one removed stays removed.
+  async ensureApplyKey() {
+    const dir = `${HOME}/mods/${APPLY_MOD}`;
+    for (const f of ["mod.json", "main.js"]) {
+      const want = await readTextFile(`${MOD}/helper/${f}`), have = await readTextFile(`${dir}/${f}`);
+      if (!want || want === have) continue;
+      await fs.mkdir(dir, { recursive: true });
+      await writeTextFile(`${dir}/${f}`, want, have);
+    }
+    if (shared(K.applyKey)) return;
+    const keys = await readTextFile(`${HOME}/keys.json`);
+    if (keys == null) return;
+    const next = bindKey(keys, APPLY_KEY, `mod.open:${APPLY_MOD}`);
+    if (next) await writeTextFile(`${HOME}/keys.json`, next, keys);
+    setShared(K.applyKey, true);
   }
 
   // The sidebar's agents list when it's another mod than Herdr's or the Studio's (agents-plus, say).
@@ -1833,6 +1931,16 @@ export default class ThemeStudio extends View {
     }
     if (this.view === "settings") return bar(said ? note(said.text, null, said.color) : note("Settings apply right away. They're yours, not a theme's: changing themes keeps them."));
     const name = this.selected();
+    if (ask && ask.kind === "layout") {
+      const here = shared("layout"), to = ask.to || here;
+      const tag = (n) => (n === here ? (this.personal() ? "shown" : "shown · makes your copy") : "");
+      return bar(h_flex().flex_1().min_w(0).gap(8).items_center()
+        .child(div().flex_none().text_size(12).text_color(t.muted).child(`Put ${ask.name} on`))
+        .child(this.popMenu("layout-pick", t, (open, toggle) => this.pillButton(t, "layout-pick-btn", to, open, toggle),
+          () => this.layoutTargets().map((n) => this.menuItem(t, `lp-${n}`, n, () => { this.ask = { ...ask, to: n }; }, { check: n === to, sub: tag(n) })), "bottom_left", 240))
+        .when(!!tag(to), (el) => el.child(div().flex_none().text_size(11.5).text_color(t.dim).child(tag(to)))),
+      this.button("ask-cancel", "Cancel", t, (_e, cx) => { this.ask = null; cx.notify(); }, "ghost"),
+      this.button("layout-go", "Apply", t, (_e, cx) => { this.ask = null; cx.spawn((cx) => this.applyToLayout(cx, false, ask.name, to)); }, true)); }
     if (ask && (ask.kind === "copy" || ask.kind === "rename")) {
       const ren = ask.kind === "rename", typed = slug(this.copyName.value() || "");
       // Rename can't take a name in use; a copy can, and gets a number.
@@ -1994,6 +2102,7 @@ export default class ThemeStudio extends View {
       .child(act("edit", "pen", mine ? "Edit" : "Edit a copy", (_e, cx) => this.editTheme(x.name, cx)))
       .when(mine, (el) => el.child(act("rename", "rename", "Rename…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "rename", from: x.name }; this.copyName.set_value(x.name); })))
       .child(act("copy", "copy", "Duplicate…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "copy", from: x.name }; this.copyName.set_value(this.freeName(`${slug(x.name)}-copy`)); }))
+      .child(act("layout", "layout", "Apply to a layout…", () => { this.ask = { kind: "layout", name: x.name }; }))
       .child(act("json", "code", "Copy JSON", (_e, cx) => this.exportTheme(x.name, cx)))
       .when(mine && !used, (el) => el.child(act("delete", "trash", "Delete…", (_e, cx) => { if (!on) this.stageTheme(x.name, cx); this.ask = { kind: "delete", name: x.name }; }, true)));
     const bg = c.background, fg = c.foreground, chrome = c.chrome || bg, dim = c.dim || c.ansi8 || fg, line = c.border || c.ansi8 || dim;
@@ -2253,7 +2362,7 @@ export default class ThemeStudio extends View {
     if (!this.personal()) return this.needsCopy(t, "Glass needs your own copy of this layout",
       `Herdr's own layouts (${shared("layout")}) only take theme and background changes. A copy takes everything: terminal opacity, translucent sidebars, pane corners and gaps. Herdr updates won't change your copy; you can switch back any time with ⌘⇧L. The Studio closes for a moment while Herdr switches.`, "glass");
     const g = this.glassShown(), c = this.themeColors(), sel = this.pickTarget;
-    const fmt = { opacity: (v) => `${Math.round(v * 100)}%`, chrome: (v) => `${Math.round(v * 100)}%`, radius: (v) => `${v}px`, gap: (v) => `${v}px`, margin: (v) => `${v}px`, angle: (v) => `${v}°`, glowIntensity: (v) => `${v}%` };
+    const fmt = { opacity: (v) => `${Math.round(v * 100)}%`, chrome: (v) => `${Math.round(v * 100)}%`, popups: (v) => `${Math.round(v * 100)}%`, radius: (v) => `${v}px`, gap: (v) => `${v}px`, margin: (v) => `${v}px`, angle: (v) => `${v}°`, glowIntensity: (v) => `${v}%` };
     const slider = (k, label) => this.slider(t, this.sliders[k], k, label, fmt[k](g[k]));
     const chips = (keys) => h_flex().flex_wrap().gap(6).children(keys.map(([k, label]) => this.chip(t, `gc-${k}`, label, this.glassHex(k), sel === `glass:${k}`, (_e, cx) => this.selectTarget(`glass:${k}`, cx))));
     const thumb = (name, p) => {
@@ -2292,8 +2401,8 @@ export default class ThemeStudio extends View {
       .child(this.section("Start from", t, h_flex().gap(8).children(Object.entries(GLASS_PRESETS).map(([n, p]) => thumb(n, p))),
         "A starting point: it sets every control below at once. Change any of them after."))
       .child(this.section("Window background", t, background, tips[g.bg]))
-      .child(this.section("Glass surfaces", t, v_flex().gap(2).child(slider("chrome", "Sidebar and bar")).child(slider("opacity", "Terminal")),
-        "Below 100%, the window background shows through. A busy background needs more opacity to keep text readable. The glass takes the theme's chrome and terminal colors: change those on the Colors tab."))
+      .child(this.section("Glass surfaces", t, v_flex().gap(2).child(slider("chrome", "Sidebar and bar")).child(slider("opacity", "Terminal")).child(slider("popups", "Popups")),
+        "Below 100%, the window background shows through. A busy background needs more opacity to keep text readable. Popups are every dialog, menu, notification and mod window (ah2's Board, say); what's under them shows through too, terminal text included, so they want more. The glass takes the theme's chrome, terminal and popover colors: change those on the Colors tab."))
       .child(this.section("Pane frames", t, v_flex().gap(2).child(slider("radius", "Corner radius")).child(slider("margin", "Margin")).child(slider("gap", "Gap")),
         "The margin frames the pane area, even with one pane. The gap shows between split panes and beside the side panel. Their color is on the Colors tab, under Behind panes.",
         { hint: "Seeing other windows through Herdr needs a Herdr setting that doesn't exist yet (herdr-app issue #190)." }));
@@ -2349,6 +2458,8 @@ export default class ThemeStudio extends View {
       .child(this.updatesSection(t));
     const mode = autoHideMode(layout()), auto = !!mode, icon = hasFooterIcon(layout());
     return v_flex().gap(22)
+      .child(this.section("This layout", t, h_flex().child(this.button("apply-layout", `Apply ${this.myTheme()} to ${shared("layout")}`, t, (_e, cx) => cx.spawn((cx) => this.applyToLayout(cx)), true)),
+        `Herdr keeps a theme for each layout, and the Studio changes only the layout shown, so a layout you switch to keeps its own theme, glass and agents list. This puts the theme you last applied here on this one, with its whole look. ${APPLY_KEY} does the same from anywhere, with the Studio closed.`))
       .child(this.section("Sidebar", t, v_flex().gap(10)
           .child(this.row(t, "Auto-hide", this.toggle("set-autohide", auto, t, (_e, cx) => this.setAutoHide(!auto, cx))))
           .when(auto, (el) => el.child(this.row(t, "Folds to", this.seg("set-ahmode", [["rail", "Minimal"], ["hidden", "Hidden"]], mode, t, (m, cx) => m !== mode && this.setAutoHide(true, cx, m))))),

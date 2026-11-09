@@ -585,8 +585,9 @@ export function patchAgents(src) {
     out = out.replace(from, () => to);
   }
   const helper = `
-// Added by Theme Studio: row sizes and the parts shown, from shared "theme-studio.agents".
-function studioAgents() { return { ...${JSON.stringify(AGENTS_DEFAULT)}, ...(shared("theme-studio.agents") || {}) }; }
+// Added by Theme Studio: row sizes and the parts shown, from shared "theme-studio.agents-by" (this
+// layout's own) or else "theme-studio.agents".
+function studioAgents() { return { ...${JSON.stringify(AGENTS_DEFAULT)}, ...((shared("theme-studio.agents-by") || {})[shared("layout")] || shared("theme-studio.agents") || {}) }; }
 // A card's own background and border, when set.
 function studioCard(el) {
   const s = studioAgents();
@@ -654,9 +655,20 @@ export function moveKeySection(text, from, to) {
   return JSON.stringify(out, null, 2) + "\n";
 }
 
+/** keys.json text with `key` bound to `action` in its global section, or null when there's no file to
+ *  read, the key is taken, or the action already has a key somewhere. */
+export function bindKey(text, key, action) {
+  let j; try { j = JSON.parse(text); } catch { return null; }
+  if (!j || typeof j !== "object" || (j.global && j.global[key]) || JSON.stringify(j).includes(`"${action}"`)) return null;
+  j.global = { ...(j.global || {}), [key]: action };
+  return JSON.stringify(j, null, 2) + "\n";
+}
+
 // The sidebar's agents list block: id "agents", or failing that the first block running an agents mod.
-const agentsBlock = (n) => (n.id === "agents" && n.content ? n : null) || (n.children || []).reduce((f, c) => f || agentsBlock(c), null);
-const agentsAny = (n) => (n.content && /^agents/.test(n.content.mod || "") ? n : null) || (n.children || []).reduce((f, c) => f || agentsAny(c), null);
+// Anywhere in the tree: a layout can nest it in its own rows, columns and stacks, or float it.
+const inside = (n) => [...(n.children || []), ...(n.floating || [])];
+const agentsBlock = (n) => (n.id === "agents" && n.content ? n : null) || inside(n).reduce((f, c) => f || agentsBlock(c), null);
+const agentsAny = (n) => (n.content && /^agents/.test(n.content.mod || "") ? n : null) || inside(n).reduce((f, c) => f || agentsAny(c), null);
 /** The mod showing a layout's agents list, or null. */
 export const agentsListMod = (tree) => { const n = tree && (agentsBlock(tree) || agentsAny(tree)); return (n && n.content && n.content.mod) || null; };
 /** Copy of a layout tree with its agents list block running `mod`. */
@@ -677,23 +689,25 @@ export function withAgentsMod(tree, on) {
     const c = { ...n };
     if (c.content && c.content.mod === from) c.content = { ...c.content, mod: to };
     if (Array.isArray(c.children)) c.children = c.children.map(walk);
+    if (Array.isArray(c.floating)) c.floating = c.floating.map(walk);
     return c;
   };
   return walk(tree);
 }
 
-export const GLASS_DEFAULT = { bg: "theme", angle: 165, from: "accent", to: "canvas", image: "", frost: "", opacity: 1, chrome: 1, radius: 6, gap: 6, margin: 8, behind: "",
+export const GLASS_DEFAULT = { bg: "theme", angle: 165, from: "accent", to: "canvas", image: "", frost: "", opacity: 1, chrome: 1, popups: 1, radius: 6, gap: 6, margin: 8, behind: "",
   bloom: "", bloomBase: "canvas", glowA: "accent", glowB: "ansi5", glowC: "ansi6", glowIntensity: 100, glows: "" };
 /** Glass fields a layout tree can't give back (the bloom's colors and spots), kept beside it in shared state. */
 export const GLASS_EXTRA = ["bloomBase", "glowA", "glowB", "glowC", "glowIntensity", "glows"];
 
 /** Copy of a layout tree with the glass look applied to its root and its `{tab:"active"}` blocks.
- *  `base` holds the theme's opaque `chrome` and `background` colors as hex, which get the alpha.
+ *  `base` holds the theme's opaque `chrome`, `background` and `popover` colors as hex, which get the alpha.
+ *  Herdr paints every popup, dialog, menu and mod window with `popover`, so `popups` reaches them all.
  *  See-through terminals: the terminal's own background goes fully transparent and the pane card
  *  carries the translucency instead. Herdr clips the card to its radius but paints a terminal's
  *  background square, so this is what keeps rounded corners clean. */
 export function applyGlass(tree, g, base) {
-  const { chrome, background } = typeof base === "string" ? { chrome: base } : base || {};
+  const { chrome, background, popover } = typeof base === "string" ? { chrome: base } : base || {};
   const root = JSON.parse(JSON.stringify(tree));
   root.background =
     g.bg === "gradient" ? { gradient: [g.from || "accent", g.to || "canvas"], angle: g.angle } :
@@ -704,6 +718,7 @@ export function applyGlass(tree, g, base) {
   if (see) root.terminal_opacity = 0; else delete root.terminal_opacity;
   const colors = { ...(root.colors || {}) };
   if (g.chrome < 1 && chrome) colors.chrome = withAlpha(chrome, g.chrome); else delete colors.chrome;
+  if (g.popups < 1 && popover) colors.popover = withAlpha(popover, g.popups); else delete colors.popover;
   if (Object.keys(colors).length) root.colors = colors; else delete root.colors;
   // Herdr doesn't paint a tab block's own background, so "behind" goes on the node holding it.
   (function walk(n, parent) {
@@ -793,6 +808,7 @@ export function readGlass(tree) {
   const alphaOf = (hex) => (typeof hex === "string" && hex.length === 9 ? Math.round((parseInt(hex.slice(7), 16) / 255) * 100) / 100 : 1);
   const ch = tree.colors && tree.colors.chrome;
   if (ch && ch.length === 9) g.chrome = Math.round((parseInt(ch.slice(7), 16) / 255) * 100) / 100;
+  if (tree.colors && tree.colors.popover) g.popups = alphaOf(tree.colors.popover);
   (function walk(n, parent) {
     if (n.content && n.content.tab && n.content.pane) {
       g.radius = n.content.pane.radius ?? g.radius; g.gap = n.content.pane.gap ?? g.gap;
