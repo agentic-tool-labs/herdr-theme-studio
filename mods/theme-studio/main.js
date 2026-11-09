@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, HoverCard, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes as herdrThemes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts } from "./lib.js";
 
 const HOME = appHome();
 // Herdr's themes() costs about a millisecond a call, and drawing the library asks for it per card;
@@ -286,19 +286,21 @@ export default class ThemeStudio extends View {
     });
     // A theme applied on Herdr's own layout can't set glass or the agents list there, and picking the
     // theme in use again changes nothing, so the theme in use brings them to the person's copy:
-    // its glass to a new copy, its agents list to a copy the Studio never set one on.
+    // its glass to a new copy, and its agents list whenever the one here isn't the theme's (an older
+    // Studio's, say). A theme without an agents list leaves the one here alone.
     if (this.personal()) {
       const fresh = shared(K.addButton); // the first open on a new copy also adds the palette icon
       if (fresh) setShared(K.addButton, null);
       const name = settings().theme;
       const glass = fresh ? this.partFull("glass", this.partValue(name, "glass")) : {};
-      const agents = !shared(K.agents) && this.partValue(name, "agents");
+      const own = this.partValue(name, "agents"), agents = own && this.partFull("agents", own);
+      const stale = agents && !sameParts(agents, this.agentsNow());
       // One after the other: each rewrites the layout.
-      if (Object.keys(glass).length || agents || fresh) cx.spawn(async (cx) => {
-        if (Object.keys(glass).length || agents) {
+      if (Object.keys(glass).length || stale || fresh) cx.spawn(async (cx) => {
+        if (Object.keys(glass).length || stale) {
           this.glass = { ...this.glass, ...glass };
           if (this.glass.bg === "bloom" && glass.bg) this.glass.bloom = await this.renderBloom(this.glass).catch(() => "");
-          if (agents) await this.writeAgents(cx, this.partFull("agents", agents)).catch((e) => this.say(String(e.message || e), "error", cx));
+          if (stale) await this.writeAgents(cx, agents).catch((e) => this.say(String(e.message || e), "error", cx));
           else this.pushGlass();
         }
         if (fresh) this.setButton(true, cx);

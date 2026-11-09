@@ -624,6 +624,9 @@ function studioName(address) {
 }
 `;
 
+/** Two parts hold the same values (key order aside). */
+export const sameParts = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].every((k) => JSON.stringify((a || {})[k]) === JSON.stringify((b || {})[k]));
+
 /** Copy of a layout tree with its agents blocks on the Studio's clone (on) or Herdr's own mod. */
 export function withAgentsMod(tree, on) {
   const [from, to] = on ? ["agents", AGENTS_MOD] : [AGENTS_MOD, "agents"];

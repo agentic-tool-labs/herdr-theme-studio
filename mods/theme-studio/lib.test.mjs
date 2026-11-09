@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -395,3 +395,7 @@ console.log("lib.test: parts passed");
   eq([browsable({ preview: "p.png", meta: { description: "d", author: "a" } }), browsable({ preview: "p.png", meta: { description: "d" } }), browsable({ meta: { description: "d", author: "a" } })], [true, false, false], "browsable");
   console.log("lib.test: sharing passed");
 }
+
+// sameParts: key order doesn't matter, nested values do
+assert.ok(sameParts({ row: 20, card: { rows: [1] } }, { card: { rows: [1] }, row: 20 }));
+assert.ok(!sameParts({ row: 20 }, { row: 24 }) && !sameParts({ row: 20 }, { row: 20, lines: "auto" }) && sameParts(null, {}));
