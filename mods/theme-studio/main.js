@@ -1112,11 +1112,14 @@ export default class ThemeStudio extends View {
 
   makeCopy(cx, tab = "glass") {
     const from = shared("layout");
-    const as = `${from}-studio`;
+    // Herdr's layout picker shows the file name: "theme-studio" for a copy of Herdr's main layout.
+    // An older Studio named copies <layout>-studio; one of those is reused rather than copied again.
+    const older = `${from}-studio`, named = from === "main" ? "theme-studio" : `theme-studio-${from}`;
     cx.spawn((cx) => this.guard(cx, "Making your copy", async () => {
       await this.ensureBackup();
       setShared(K.tab, tab);
       setShared(K.addButton, true);
+      const as = (await readTextFile(`${HOME}/layouts/${older}.json`)) ? older : named;
       const exists = await readTextFile(`${HOME}/layouts/${as}.json`);
       this.afterSwitch(exists ? ["layout.switch", { name: as }] : ["layout.clone", { name: from, as }]);
     }));

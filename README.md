@@ -17,7 +17,7 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod: herdr.dev/mods/agentic-to
 
 It copies `mods/theme-studio/` into `~/.config/herdr-app/mods/` and merges `keys.json` into yours.
 It also adds the palette icon beside Settings. On Herdr's own layout that means switching you to
-your own copy of it (`<layout>-studio`); ⌃⇧L switches back. Then press `ctrl-shift-y` or the icon.
+your own copy of it (`theme-studio` for Herdr's main layout); ⌃⇧L switches back. Then press `ctrl-shift-y` or the icon.
 By hand: copy that folder yourself and add `"ctrl-shift-y": "mod.open:theme-studio"` to the `global` section of your `keys.json`.
 
 Your agent will mention that the Studio runs programs and reads files outside its folder. It runs
@@ -58,7 +58,7 @@ overwrite.
 - **⌃⇧Y** toggles the window.
 - **The palette icon beside Settings** in the sidebar footer. Herdr's Settings screen can't take
   extra sections (Herdr rewrites it on every start), and its sidebar mod and built-in layouts can't
-  be edited. So the Studio makes your own copy of the layout (`<layout>-studio`) and a patched
+  be edited. So the Studio makes your own copy of the layout (`theme-studio` for Herdr's main layout) and a patched
   clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. The Studio's
   [Settings](#settings) page adds or removes it, as does `button=on|off`; on Herdr's own layout
   `button=on` makes your copy first. On the narrow sidebar rail it gets its own row under Settings.
@@ -273,7 +273,7 @@ The sample terminal under the preview shows each pick at once. Herdr rereads `se
 | Corner radius, Margin, Gap | The pane cards' shape and spacing. |
 
 Herdr's own layouts refuse these fields, so on one of them the tab offers **Make my copy of <layout>**, your
-own copy of the layout (`<layout>-studio`). The same panes, before and after:
+own copy of the layout (`theme-studio` for Herdr's main layout). The same panes, before and after:
 
 | Solid (Tokyo Night as Herdr draws it) | Bloom, terminals at 0.72, sidebar at 0.6, radius 12 |
 |---|---|
