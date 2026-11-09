@@ -1678,7 +1678,7 @@ export default class ThemeStudio extends View {
     const banner = this.updateBanner(t), foot = this.footer(t, cx);
     if (this.bloomOpen && !(edit && this.tab === "glass" && this.glassShown().bg === "bloom")) this.bloomOpen = false; // left the bloom behind
     return v_flex().id("root").relative().size_full().bg(t.popover).text_color(t.foreground).text_size(13)
-      .on_mouse_move((e, cx) => { if (this.drag) { this.mouse = e.local_position || e.position; cx.notify(); } })
+      .on_mouse_move((e, cx) => { if (this.drag) { this.mouse = e.local_position || e.position; this.dragSeen = { position: e.position, local: e.local_position, root: e.bounds }; cx.notify(); } })
       .on_mouse_up("left", (_e, cx) => this.endDrag(cx))
       .child(this.header(t, s, overlay))
       .when(!!banner, (el) => el.child(banner))
@@ -2801,6 +2801,7 @@ export default class ThemeStudio extends View {
     cx.stop_propagation();
     // The chip stays under the pointer at the spot it was grabbed.
     this.grab = (e && e.local_position) || { x: 12 * zoom(), y: 12 * zoom() }; // on screen, like the pointer
+    this.dragStart = e ? { position: e.position, local: e.local_position, chip: e.bounds } : null;
     this.drag = drag; this.dropAt = null;
     cx.notify();
   }
@@ -2811,6 +2812,8 @@ export default class ThemeStudio extends View {
   }
   endDrag(cx) {
     const { drag, dropAt: at } = this;
+    // The last drag's pointer numbers, for telling why a chip sat away from the pointer on some Mac.
+    if (drag) try { setShared("theme-studio.drag-debug", { start: this.dragStart, last: this.dragSeen, grab: this.grab, ghost: this.mouse && unzoom({ x: this.mouse.x - this.grab.x, y: this.mouse.y - this.grab.y }), zoom: zoom(), window: window.bounds(), viewport: window.viewport_size(), rem: window.rem_size(), pointer: window.mouse_position(), at: Date.now() }); } catch {}
     this.drag = null; this.dropAt = null; this.mouse = null; this.chipAt = null;
     if (!drag) return;
     const from = drag.from;
