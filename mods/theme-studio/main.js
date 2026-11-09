@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, HoverCard, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes as herdrThemes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts, copyName, olderCopy, moveKeySection } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts, copyName, olderCopy, moveKeySection, agentsListMod, withAgentsListMod } from "./lib.js";
 
 const HOME = appHome();
 // Herdr's themes() costs about a millisecond a call, and drawing the library asks for it per card;
@@ -27,7 +27,7 @@ const tipCard = (t, id, el, text, grow = false) => {
 };
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved", agentsWas: "theme-studio.agents-was" };
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -268,6 +268,7 @@ export default class ThemeStudio extends View {
         } catch {}
       }
       cx.notify();
+      if (this.bring) await this.bringLook(cx, this.bring.fresh).catch((e) => this.say(String(e.message || e), "error", cx));
       await this.scanThemeFiles(cx);
       await this.checkCursorHook(cx);
       if (this.glass.bg === "frost") await this.refreshFrost(cx, false);
@@ -290,30 +291,12 @@ export default class ThemeStudio extends View {
     const moving = !!old;
     if (moving) cx.spawn((cx) => this.guard(cx, `Renaming your layout to ${old[1]}`, (cx) => this.moveCopy(cx, ...old)));
     else if (shared(K.moved) && shared(K.moved) !== shared("layout")) cx.spawn(() => this.dropOldCopy(shared(K.moved)));
-    // A theme applied on Herdr's own layout can't set glass or the agents list there, and picking the
-    // theme in use again changes nothing, so the theme in use brings them to the person's copy:
-    // its glass to a new copy, and its agents list whenever the one here isn't the theme's (an older
-    // Studio's, say). A theme without an agents list leaves the one here alone.
     // A layout whose pane header is the rounded clone, with the clone missing (0.9.2 could leave one).
     if (this.personal() && JSON.stringify(layout()).includes(`"${ROUNDED_HEADER}"`)) cx.spawn((cx) => this.ensureRoundedHeader(cx).catch(() => {}));
+    // The theme in use's look, once the presets are read (see bringLook).
     if (this.personal() && !moving) {
-      const fresh = shared(K.addButton); // the first open on a new copy also adds the palette icon
-      if (fresh) setShared(K.addButton, null);
-      const name = settings().theme;
-      const glass = fresh ? this.partFull("glass", this.partValue(name, "glass")) : {};
-      const own = this.partValue(name, "agents"), agents = own && this.partFull("agents", own);
-      const stale = agents && !sameParts(agents, this.agentsNow());
-      // One after the other: each rewrites the layout.
-      if (Object.keys(glass).length || stale || fresh) cx.spawn(async (cx) => {
-        if (Object.keys(glass).length || stale) {
-          this.glass = { ...this.glass, ...glass };
-          if (this.glass.radius > 0) await this.ensureRoundedHeader(cx).catch(() => {});
-          if (this.glass.bg === "bloom" && glass.bg) this.glass.bloom = await this.renderBloom(this.glass).catch(() => "");
-          if (stale) await this.writeAgents(cx, agents).catch((e) => this.say(String(e.message || e), "error", cx));
-          else this.pushGlass();
-        }
-        if (fresh) this.setButton(true, cx);
-      });
+      this.bring = { fresh: !!shared(K.addButton) }; // the first open on a new copy also adds the palette icon
+      if (this.bring.fresh) setShared(K.addButton, null);
     }
     // Commands, so keys.json (or `herdr-app do theme-studio.<command>`) can drive the Studio.
     cx.spawn(async (cx) => { for (;;) { const c = await nextCommand(); this.command(c, cx); cx.notify(); } });
@@ -387,7 +370,8 @@ export default class ThemeStudio extends View {
     else if (verb === "card" && CARD_STARTS.some(([id]) => id === arg)) this.startCard(arg, cx);
     else if (verb === "card-item" && this.cardSel && this.cardSel.i != null) { const [k, ...r] = arg.split(":"), x = r.join(":"); this.editItem({ [k]: x === "" ? undefined : isNaN(+x) ? x : +x }, cx); }
     else if (verb === "autoupdate") setShared(AUTO_UPDATE_KEY, arg !== "off");
-    else if (verb === "update") this.checkUpdate(cx, arg === "install" ? { install: true } : { force: true });
+    else if (verb === "agents-swap") this.swapAgents(cx, arg !== "off");
+    else if (verb === "update") this.checkUpdate(cx, arg === "install" ? { install: true } : arg === "reinstall" ? { install: true, reinstall: true, force: true } : { force: true });
     else if (verb === "card-select") { const [row, i] = arg.split(".").map(Number); this.cardSel = i >= 0 ? { row, i } : { row }; }
     else if (verb.startsWith("agents-") && verb.slice(7) in AGENTS_DEFAULT) { const k = verb.slice(7); const d = AGENTS_DEFAULT[k]; this.stageAgents({ [k]: typeof d === "boolean" ? arg !== "off" : typeof d === "string" ? arg : Number(arg) }, cx); }
     else if (verb === "image") arg ? this.useImage(arg, cx) : this.chooseImage(cx);
@@ -598,11 +582,13 @@ export default class ThemeStudio extends View {
     if (!p) return null;
     return studioExtras(p.studio);
   }
-  // Yours, else a bundled preset's.
-  extrasAny(name) { return extrasOf(name) || this.presetExtras(name); }
+  // A bundled preset's, else yours.
+  extrasAny(name) { return this.presetExtras(name) || extrasOf(name); }
 
   partCtx(over) {
-    const all = { ...Object.fromEntries(this.presets.filter((p) => p.studio).map((p) => [p.name, this.presetExtras(p.name)])), ...(shared(K.themes) || {}) };
+    // A shipped theme's own look wins over the copy stored when it was installed, which an older
+    // Studio may have written with other paths.
+    const all = { ...(shared(K.themes) || {}), ...Object.fromEntries(this.presets.filter((p) => p.studio).map((p) => [p.name, this.presetExtras(p.name)])) };
     if (over) { const ex = all[over.name] || {}; all[over.name] = { ...ex, src: { ...(ex.src || {}), [over.part]: over.src } }; }
     // themes() costs about a millisecond a call, so one read serves the whole walk.
     const th = new Map(themes().map((x) => [x.name, !!x.light]));
@@ -913,7 +899,8 @@ export default class ThemeStudio extends View {
       if (Object.keys(agents).length && this.personal()) { await this.writeAgents(cx, { ...this.agentsNow(), ...agents }); done.push("agents list"); }
       this.draft = {}; this.colorDraft = {}; this.glassDraft = {}; this.cursorDraft = {}; this.themeDraft = null; this.agentsDraft = {}; this.srcDraft = {};
       this.pickFor = null; this.syncControls();
-      this.say(`Applied ${done.join(", ")}`, "success", cx);
+      const other = Object.keys(agents).length && this.personal() && this.otherAgents();
+      this.say(`Applied ${done.join(", ")}${other ? `. The sidebar runs ${other}, so the agents list doesn't show there: the Agents tab can swap it in` : ""}`, other ? "info" : "success", cx);
       if (after) await after(cx);
     }));
   }
@@ -1117,6 +1104,56 @@ export default class ThemeStudio extends View {
   afterSwitch([verb, args], picks = []) {
     for (const [c, a] of picks) run(c, a);
     run(verb, args);
+  }
+
+  // A theme applied on Herdr's own layout can't set glass or the agents list there, and picking the
+  // theme in use again changes nothing, so on open the theme in use brings them to the person's copy:
+  // all its glass to a new copy; its picture when the one shown isn't it (or is gone: an older Studio's
+  // path); its agents list whenever the one here isn't the theme's. A theme without an agents list
+  // leaves the one here alone. Each rewrites the layout, so one after the other.
+  async bringLook(cx, fresh) {
+    const name = settings().theme;
+    const theme = this.partFull("glass", this.partValue(name, "glass")), now = readGlass(layout());
+    const pic = theme.bg === "image" && !!theme.image && (now.bg !== "image" || now.image !== theme.image || !(await fs.exists(`${HOME}/${now.image}`)));
+    const glass = fresh || pic ? theme : null;
+    const own = this.partValue(name, "agents"), agents = own && this.partFull("agents", own);
+    const stale = agents && !sameParts(agents, this.agentsNow());
+    const other = this.otherAgents();
+    if (agents && other) this.say(`Your sidebar runs ${other}, so ${name}'s agents list doesn't show there. The Agents tab can swap it in.`, "info", cx);
+    if (glass || stale) {
+      if (glass) this.glass = { ...this.glass, ...glass };
+      if (this.glass.radius > 0) await this.ensureRoundedHeader(cx).catch(() => {});
+      if (glass && glass.bg === "bloom") this.glass.bloom = await this.renderBloom(this.glass).catch(() => "");
+      if (stale) await this.writeAgents(cx, agents).catch((e) => this.say(String(e.message || e), "error", cx));
+      else this.pushGlass();
+      if (glass) this.syncControls();
+      cx.notify();
+    }
+    if (fresh) this.setButton(true, cx);
+  }
+
+  // The sidebar's agents list when it's another mod than Herdr's or the Studio's (agents-plus, say).
+  otherAgents() {
+    const m = agentsListMod(layout());
+    return m && m !== "agents" && m !== AGENTS_MOD ? m : null;
+  }
+  // Swaps that mod for the Studio's list (remembered, so it can come back), or back again.
+  swapAgents(cx, on) {
+    cx.spawn((cx) => this.guard(cx, on ? "Using the Studio's agents list" : "Putting your agents list back", async (cx) => {
+      const was = { ...(shared(K.agentsWas) || {}) }, here = shared("layout");
+      if (on) {
+        const m = this.otherAgents();
+        if (!m) return;
+        setShared(K.agentsWas, { ...was, [here]: m });
+        run("layout.set", { layout: withAgentsListMod(layout(), "agents") });
+        await this.writeAgents(cx, this.agentsShown());
+      } else {
+        if (!was[here]) return;
+        run("layout.set", { layout: withAgentsListMod(layout(), was[here]) });
+        delete was[here]; setShared(K.agentsWas, was);
+      }
+      this.say(on ? "The sidebar shows the Studio's agents list" : "Your agents list is back", "success", cx);
+    }));
   }
 
   // Copies an older Studio's layout to its new name with what's kept by name (theme picks, glass
@@ -2259,6 +2296,15 @@ export default class ThemeStudio extends View {
   agentsTab(t, s, cx) {
     if (!this.personal()) return this.needsCopy(t, "The agents list needs your own copy of this layout",
       `Herdr's own layouts (${shared("layout")}) can't swap their agents list. A copy can: it shows the Studio's version of the list, a copy of Herdr's with your sizes. The Studio closes for a moment while Herdr switches.`, "agents");
+    const other = this.otherAgents(), was = (shared(K.agentsWas) || {})[shared("layout")];
+    const swap = other ? v_flex().gap(10).p(14).rounded(10).bg(t.raised).border_1().border_color(t.accent)
+      .child(div().font_semibold().child(`Your sidebar runs ${other}, not Herdr's agents list`))
+      .child(div().text_size(12.5).text_color(t.muted).line_height("19px").child(`The Studio styles only Herdr's own list, so nothing here shows in the sidebar while ${other} is there. Swapping puts the Studio's list in its place on this layout; ${other} stays installed, and you can switch back here.`))
+      .child(h_flex().child(this.button("agents-swap", "Use the Studio's list instead", t, (_e, cx) => this.swapAgents(cx, true), true)))
+      : was ? h_flex().gap(10).items_center().p(10).rounded(10).border_1().border_color(t.border)
+        .child(div().flex_1().text_size(12.5).text_color(t.muted).child(`This layout used ${was} for its agents list.`))
+        .child(this.button("agents-unswap", `Use ${was} again`, t, (_e, cx) => this.swapAgents(cx, false)))
+      : null;
     const a = this.agentsShown(), sel = this.pickTarget;
     // Number boxes in a grid: three to a line in the wide Agents panel.
     const nums = (pairs) => h_flex().flex_wrap().gap(6).children(pairs.map(([k, label]) => this.numBox(t, k, label)));
@@ -2266,6 +2312,7 @@ export default class ThemeStudio extends View {
     const seg = (id, opts, key) => this.seg(id, opts, a[key], t, (v, cx) => this.stageAgents({ [key]: v }, cx), true);
     const sw = (id, label, key) => this.row(t, label, this.toggle(id, a[key], t, (_e, cx) => this.stageAgents({ [key]: !a[key] }, cx)));
     return v_flex().gap(22)
+      .when(!!swap, (el) => el.child(swap))
       .child(this.partBar(t, "agents"))
       .child(this.section("Layout", t, v_flex().gap(2)
         .child(this.row(t, "Density", this.seg("agp", Object.keys(AGENT_PRESETS).map((n) => [n, n]), preset ? preset[0] : null, t, (n, cx) => this.stageAgents({ ...AGENT_PRESETS[n] }, cx), true)))
@@ -2671,8 +2718,10 @@ export default class ThemeStudio extends View {
         .child(h_flex().gap(8)
           .child(this.button("update-check", this.updating === "check" ? "Checking…" : "Check now", t, (_e, cx) => this.checkUpdate(cx, { force: true })))
           .when(u.ready, (el) => el.child(this.button("update-install", this.updating === "install" ? "Installing…" : `Update to v${u.latest}`, t, (_e, cx) => this.checkUpdate(cx, { install: true }), true)))
+          // The latest release's files again, for an install that seems off.
+          .when(!u.ready, (el) => el.child(this.button("update-reinstall", this.updating === "install" ? "Reinstalling…" : "Reinstall", t, (_e, cx) => this.checkUpdate(cx, { install: true, reinstall: true, force: true }))))
           .when(!!u.url, (el) => el.child(this.link("update-notes2", "What's new", t, () => this.openUrl(u.url))))),
-      "Updates come from the latest release of agentic-tool-labs/herdr-theme-studio on GitHub, checked when the Studio opens and every 6 hours from the palette icon. Auto-update installs a new release as soon as it's found, but never while you have unsaved changes. Every install posts a notice.",
+      "Updates come from the latest release of agentic-tool-labs/herdr-theme-studio on GitHub, checked when the Studio opens and every 6 hours from the palette icon. Auto-update installs a new release as soon as it's found, but never while you have unsaved changes. Reinstall puts the latest release's files back; your themes and layouts stay. Every install posts a notice.",
       { hint: [when ? `Last checked ${when}.` : null, u.offline ? "GitHub couldn't be reached on the last try." : null, u.failed ? `The last install failed: ${u.failed}` : null].filter(Boolean).join(" ") || null });
   }
 

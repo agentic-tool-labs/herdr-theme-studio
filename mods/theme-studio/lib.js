@@ -419,7 +419,8 @@ export async function studioUpdate(h, o = {}) {
   const busy = st.installing && Date.now() - st.installing < 120e3;
   // Auto-update waits while the Studio has unsaved changes: the new files reload it.
   const auto = o.auto !== false && h.shared("theme-studio.autoupdate") && !h.shared("theme-studio.editing");
-  if (newer && !busy && (o.install || auto)) {
+  // A reinstall puts the latest release back even when it's the one installed.
+  if ((newer || (o.reinstall && next.latest)) && !busy && (o.install || auto)) {
     h.setShared(KEY, { ...next, installing: Date.now(), failed: "" });
     // The release's mods/theme-studio, checked by Herdr, replaces this folder; the old one is
     // kept until the new one is in place. Herdr's generated typings are carried over.
@@ -441,7 +442,8 @@ mv "$dest" "$tmp/old" && mv "$src" "$dest" || { [ -d "$tmp/old" ] && [ ! -d "$de
       const reopen = `sleep 0.5; herdr-app status 2>/dev/null | tr -d ' \\n' | grep -q '"overlays":\\[[^]]*"theme-studio"' || exit 0
 herdr-app do mod.open '{"name":"theme-studio"}'; sleep 1.5; herdr-app do mod.open '{"name":"theme-studio"}'`;
       await h.exec("sh", ["-c", `(${reopen}) >/dev/null 2>&1 </dev/null &`]).catch(() => {});
-      h.notify({ title: `Theme Studio updated to v${next.latest}`, body: `Was v${mine}. An open Studio reopens with it; if yours didn't, close and open it.`, level: "success", action: open });
+      const again = next.latest === mine;
+      h.notify({ title: again ? `Theme Studio v${mine} reinstalled` : `Theme Studio updated to v${next.latest}`, body: `${again ? "Fresh files from the release." : `Was v${mine}.`} An open Studio reopens with it; if yours didn't, close and open it.`, level: "success", action: open });
       return { ...next, newer: false, updated: next.latest };
     }
     next = { ...next, installing: 0, failed: String(r.stderr || r.stdout || "the install failed").trim().split("\n").pop() };
@@ -641,6 +643,18 @@ export function moveKeySection(text, from, to) {
   const out = {};
   for (const [k, v] of Object.entries(j)) out[k === `layout:${from}` ? `layout:${to}` : k] = v;
   return JSON.stringify(out, null, 2) + "\n";
+}
+
+// The sidebar's agents list block: id "agents", or failing that the first block running an agents mod.
+const agentsBlock = (n) => (n.id === "agents" && n.content ? n : null) || (n.children || []).reduce((f, c) => f || agentsBlock(c), null);
+const agentsAny = (n) => (n.content && /^agents/.test(n.content.mod || "") ? n : null) || (n.children || []).reduce((f, c) => f || agentsAny(c), null);
+/** The mod showing a layout's agents list, or null. */
+export const agentsListMod = (tree) => { const n = tree && (agentsBlock(tree) || agentsAny(tree)); return (n && n.content && n.content.mod) || null; };
+/** Copy of a layout tree with its agents list block running `mod`. */
+export function withAgentsListMod(tree, mod) {
+  const root = JSON.parse(JSON.stringify(tree)), n = agentsBlock(root) || agentsAny(root);
+  if (n) n.content = { ...n.content, mod };
+  return root;
 }
 
 /** Two parts hold the same values (key order aside). */

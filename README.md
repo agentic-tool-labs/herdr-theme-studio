@@ -43,7 +43,8 @@ icon, a banner across the top of the Studio with **What's new** and **Update**, 
 it, and swaps it in for `mods/theme-studio/`; an open Studio closes and opens again on the new files, and a
 notice says it's done (or why it couldn't). [Settings](#settings) has **Check now** and an
 **Auto-update** switch, which installs a release as soon as it's found but never while you have
-unsaved changes.
+unsaved changes. When you're up to date, **Reinstall** puts the latest release's files back; your
+themes and layouts stay.
 
 ![An update ready: the banner and Settings › Updates](docs/screenshots/update.png)
 
@@ -370,7 +371,7 @@ they apply at once.
 | Folds to: Minimal, Hidden | **Minimal** folds it to a 52px rail, room for each space's and agent's number and status dot. **Hidden** takes it away entirely; the window's left edge brings it back. |
 | Beside Settings | The palette icon in the sidebar footer that opens the Studio. It shows a dot when an update is ready. |
 | Defaults | Per part (Type, Cursor, Glass, Agents list), the theme dark themes and light themes take it from when their part is set to Default, or Herdr's. It shows the next time you apply a theme. |
-| Updates | Your version and the latest release, **Check now**, **Update to v…**, **What's new**, and **Auto-update**. See [Updating](#updating). |
+| Updates | Your version and the latest release, **Check now**, **Update to v…** (or **Reinstall**), **What's new**, and **Auto-update**. See [Updating](#updating). |
 
 Auto-hide and the icon need your own copy of the layout, like Glass; Updates don't. Auto-hide is the sidebar folded (or hidden)
 in the layout, plus an empty floating block from the Studio that watches the pointer; turning it

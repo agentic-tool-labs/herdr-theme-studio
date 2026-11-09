@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts, copyName, olderCopy, moveKeySection } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts, copyName, olderCopy, moveKeySection, agentsListMod, withAgentsListMod } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -410,3 +410,12 @@ assert.equal(olderCopy("theme-studio", SHIPPED), null); assert.equal(olderCopy("
 assert.deepEqual(Object.keys(JSON.parse(moveKeySection('{"global":{},"layout:main-studio":{"a":"b"},"x":1}', "main-studio", "theme-studio"))), ["global", "layout:theme-studio", "x"]);
 assert.equal(moveKeySection('{"global":{}}', "main-studio", "theme-studio"), null);
 assert.equal(moveKeySection("not json", "a", "b"), null);
+
+// the sidebar's agents list mod, and swapping it
+const sideTree = { id: "root", children: [{ id: "sidebar", children: [{ id: "spaces", content: { mod: "spaces" } }, { id: "agents", content: { mod: "agents-plus", props: { x: 1 } } }] }] };
+assert.equal(agentsListMod(sideTree), "agents-plus");
+const swapped = withAgentsListMod(sideTree, "agents");
+assert.equal(agentsListMod(swapped), "agents"); assert.deepEqual(swapped.children[0].children[1].content.props, { x: 1 });
+assert.equal(agentsListMod(sideTree), "agents-plus", "the original tree is untouched");
+assert.equal(agentsListMod({ id: "root", children: [{ id: "list", content: { mod: "agents-studio" } }] }), "agents-studio");
+assert.equal(agentsListMod({ id: "root", children: [] }), null);
