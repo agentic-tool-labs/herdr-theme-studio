@@ -1,6 +1,6 @@
 // node mods/theme-studio/lib.test.mjs — exits nonzero on the first failure.
 import assert from "node:assert/strict";
-import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts } from "./lib.js";
+import { liftContrast, breakLigatures, patchFooter, FOOTER_PATCH, withFooterIcon, hasFooterIcon, FOOTER_MOD, patchHeader, ROUNDED_HEADER, withButton, hasButton, contrast, withAlpha, normHex, mergeSettings, themeFileFrom, setToken, parseTheme, applyGlass, readGlass, sortFonts, hexToHsla, hslaToHex, bloomSpec, glowList, glowsText, newGlow, MAX_GLOWS, GLASS_DEFAULT, cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, withAutoHide, EDGE_ID, autoHideMode, cardFrom, studioDrawCard, AGENTS_DEFAULT, versionNewer, studioUpdate, resolvePart, partSource, dependents, partJson, parsePart, sameParts, copyName, olderCopy, moveKeySection } from "./lib.js";
 import { readFileSync, existsSync } from "node:fs";
 
 // contrast
@@ -399,3 +399,13 @@ console.log("lib.test: parts passed");
 // sameParts: key order doesn't matter, nested values do
 assert.ok(sameParts({ row: 20, card: { rows: [1] } }, { card: { rows: [1] }, row: 20 }));
 assert.ok(!sameParts({ row: 20 }, { row: 24 }) && !sameParts({ row: 20 }, { row: 20, lines: "auto" }) && sameParts(null, {}));
+
+// layout copy names, and moving an older Studio's copy
+const SHIPPED = ["main", "terminals", "win98"];
+assert.equal(copyName("main"), "theme-studio"); assert.equal(copyName("win98"), "theme-studio-win98");
+assert.deepEqual(olderCopy("main-studio", SHIPPED), ["main-studio", "theme-studio"]);
+assert.deepEqual(olderCopy("win98-studio", SHIPPED), ["win98-studio", "theme-studio-win98"]);
+assert.equal(olderCopy("theme-studio", SHIPPED), null); assert.equal(olderCopy("mine-studio", SHIPPED), null); assert.equal(olderCopy("main", SHIPPED), null);
+assert.deepEqual(Object.keys(JSON.parse(moveKeySection('{"global":{},"layout:main-studio":{"a":"b"},"x":1}', "main-studio", "theme-studio"))), ["global", "layout:theme-studio", "x"]);
+assert.equal(moveKeySection('{"global":{}}', "main-studio", "theme-studio"), null);
+assert.equal(moveKeySection("not json", "a", "b"), null);

@@ -624,6 +624,19 @@ function studioName(address) {
 }
 `;
 
+/** The Studio's copy of one of Herdr's layouts: theme-studio for main, theme-studio-<layout> for the others. */
+export const copyName = (from) => (from === "main" ? "theme-studio" : `theme-studio-${from}`);
+/** What an older Studio called that copy (<layout>-studio), as [old name, new name], else null. */
+export const olderCopy = (name, shipped) => { const m = /^(.+)-studio$/.exec(name || ""); return m && shipped.includes(m[1]) ? [name, copyName(m[1])] : null; };
+/** keys.json text with a layout's own section moved to another name, or null when it has none. */
+export function moveKeySection(text, from, to) {
+  let j; try { j = JSON.parse(text); } catch { return null; }
+  if (!j || typeof j !== "object" || !(`layout:${from}` in j) || `layout:${to}` in j) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(j)) out[k === `layout:${from}` ? `layout:${to}` : k] = v;
+  return JSON.stringify(out, null, 2) + "\n";
+}
+
 /** Two parts hold the same values (key order aside). */
 export const sameParts = (a, b) => [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].every((k) => JSON.stringify((a || {})[k]) === JSON.stringify((b || {})[k]));
 

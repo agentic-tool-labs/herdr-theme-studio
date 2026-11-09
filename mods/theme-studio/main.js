@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, Popup, HoverCard, InputState, Input, NumberInput, TextareaState, Textarea, SliderState, Slider, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { theme, themes as herdrThemes, settings, fonts, layout, layouts, terminals, nextCommand, shared, setShared, run, exec, notify, appHome, home, props, closeOverlay, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
-import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts } from "./lib.js";
+import { cursorCode, patchAgents, withAgentsMod, AGENTS_MOD, AGENTS_DEFAULT, liftContrast, breakLigatures, patchHeader, ROUNDED_HEADER, patchFooter, FOOTER_MOD, withFooterIcon, hasFooterIcon, contrast, normHex, mergeSettings, themeFileFrom, setToken, isOverride, parseTheme, slug, applyGlass, readGlass, GLASS_DEFAULT, GLASS_EXTRA, bloomSpec, glowList, glowsText, newGlow, glowColor, MAX_GLOWS, hexToHsla, hslaToHex, withAlpha, sortFonts, isMono, findNode, withAutoHide, autoHideMode, cardFrom, studioDrawCard, CARD_ITEMS, CARD_STARTS, isTextItem, studioUpdate, versionNewer, UPDATE_KEY, AUTO_UPDATE_KEY, PARTS, PART_LABEL, partSource, resolvePart, dependents, partJson, parsePart, cleanStudio, studioExtras, joinPath, isPicture, githubLink, githubEntries, manifestThemes, browsable, sameParts, copyName, olderCopy, moveKeySection } from "./lib.js";
 
 const HOME = appHome();
 // Herdr's themes() costs about a millisecond a call, and drawing the library asks for it per card;
@@ -27,7 +27,7 @@ const tipCard = (t, id, el, text, grow = false) => {
 };
 const MOD = `${HOME}/mods/theme-studio`;
 const SHIPPED_LAYOUTS = ["main", "terminals", "win98"];
-const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults" };
+const K = { addButton: "theme-studio.add-button", tab: "theme-studio.tab", owned: "theme-studio.owned", backup: "theme-studio.backup", themes: "theme-studio.themes", editing: "theme-studio.editing", wallpaper: "theme-studio.wallpaper", held: "theme-studio.held", glassExtra: "theme-studio.glass-extra", agents: "theme-studio.agents", cursor: "theme-studio.cursor", defaults: "theme-studio.defaults", moved: "theme-studio.moved" };
 // The cursor shape lives in the shell, not in Herdr: cursor.zsh (sourced from ~/.zshrc) sends the
 // DECSCUSR code in cursor-shape at each prompt, and Apply sends it to every open pane at once.
 const CURSOR_LINE = `[[ -r ${appHome()}/cursor.zsh ]] && source ${appHome()}/cursor.zsh`;
@@ -284,11 +284,19 @@ export default class ThemeStudio extends View {
       if (this.glass.bg === "bloom") cx.spawn(async () => { this.glass.bloom = await this.renderBloom(this.glass).catch(() => this.glass.bloom); this.pushGlass(); });
       else if (this.glass.chrome < 1 || this.glass.opacity < 1) this.pushGlass();
     });
+    // An older Studio's copy (main-studio) moves to its new name (theme-studio); the rest waits for the
+    // Studio to open there. The old copy goes on that open, once it's no longer the one shown.
+    const old = olderCopy(shared("layout"), SHIPPED_LAYOUTS);
+    const moving = !!old;
+    if (moving) cx.spawn((cx) => this.guard(cx, `Renaming your layout to ${old[1]}`, (cx) => this.moveCopy(cx, ...old)));
+    else if (shared(K.moved) && shared(K.moved) !== shared("layout")) cx.spawn(() => this.dropOldCopy(shared(K.moved)));
     // A theme applied on Herdr's own layout can't set glass or the agents list there, and picking the
     // theme in use again changes nothing, so the theme in use brings them to the person's copy:
     // its glass to a new copy, and its agents list whenever the one here isn't the theme's (an older
     // Studio's, say). A theme without an agents list leaves the one here alone.
-    if (this.personal()) {
+    // A layout whose pane header is the rounded clone, with the clone missing (0.9.2 could leave one).
+    if (this.personal() && JSON.stringify(layout()).includes(`"${ROUNDED_HEADER}"`)) cx.spawn((cx) => this.ensureRoundedHeader(cx).catch(() => {}));
+    if (this.personal() && !moving) {
       const fresh = shared(K.addButton); // the first open on a new copy also adds the palette icon
       if (fresh) setShared(K.addButton, null);
       const name = settings().theme;
@@ -299,6 +307,7 @@ export default class ThemeStudio extends View {
       if (Object.keys(glass).length || stale || fresh) cx.spawn(async (cx) => {
         if (Object.keys(glass).length || stale) {
           this.glass = { ...this.glass, ...glass };
+          if (this.glass.radius > 0) await this.ensureRoundedHeader(cx).catch(() => {});
           if (this.glass.bg === "bloom" && glass.bg) this.glass.bloom = await this.renderBloom(this.glass).catch(() => "");
           if (stale) await this.writeAgents(cx, agents).catch((e) => this.say(String(e.message || e), "error", cx));
           else this.pushGlass();
@@ -1110,11 +1119,43 @@ export default class ThemeStudio extends View {
     run(verb, args);
   }
 
+  // Copies an older Studio's layout to its new name with what's kept by name (theme picks, glass
+  // extras, the revert point, its keys), then shows it. The old file goes later: see dropOldCopy.
+  // ponytail: a theme-studio of the person's own (not this copy) leaves main-studio as it is, and the
+  // look sync on open skips it; rename that layout to have the Studio move this one.
+  async moveCopy(cx, from, to) {
+    const file = await readTextFile(`${HOME}/layouts/${from}.json`);
+    if (!file) throw new Error(`Can't read layouts/${from}.json`);
+    const there = await readTextFile(`${HOME}/layouts/${to}.json`);
+    if (there && there !== file) return this.say(`Your layout stays ${from}: there's already a layout named ${to}`, "info", cx);
+    if (there) { setShared(K.moved, from); return run("layout.switch", { name: to }); } // copied last time, not yet shown
+    const state = await readTextFile(`${HOME}/layouts/.state/${from}.json`);
+    if (state) await writeTextFile(`${HOME}/layouts/.state/${to}.json`, state, await readTextFile(`${HOME}/layouts/.state/${to}.json`));
+    await writeTextFile(`${HOME}/layouts/${to}.json`, file, null);
+    const extra = shared(K.glassExtra) || {};
+    if (extra[from]) setShared(K.glassExtra, { ...extra, [to]: extra[from] });
+    const b = shared(K.backup);
+    if (b && b.layout === from) setShared(K.backup, { ...b, layout: to });
+    const keys = await readTextFile(`${HOME}/keys.json`);
+    const moved = keys && moveKeySection(keys, from, to);
+    if (moved) await writeTextFile(`${HOME}/keys.json`, moved, keys);
+    setShared(K.moved, from);
+    run("layout.switch", { name: to });
+  }
+
+  async dropOldCopy(from) {
+    setShared(K.moved, null);
+    const extra = { ...(shared(K.glassExtra) || {}) };
+    if (from in extra) { delete extra[from]; setShared(K.glassExtra, extra); }
+    await fs.unlink(`${HOME}/layouts/.state/${from}.json`).catch(() => {});
+    await fs.unlink(`${HOME}/layouts/${from}.json`).catch(() => {});
+  }
+
   makeCopy(cx, tab = "glass") {
     const from = shared("layout");
     // Herdr's layout picker shows the file name: "theme-studio" for a copy of Herdr's main layout.
     // An older Studio named copies <layout>-studio; one of those is reused rather than copied again.
-    const older = `${from}-studio`, named = from === "main" ? "theme-studio" : `theme-studio-${from}`;
+    const older = `${from}-studio`, named = copyName(from);
     cx.spawn((cx) => this.guard(cx, "Making your copy", async () => {
       await this.ensureBackup();
       setShared(K.tab, tab);
