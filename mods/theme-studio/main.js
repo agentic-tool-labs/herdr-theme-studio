@@ -320,14 +320,14 @@ export default class ThemeStudio extends View {
   // tab=<id> · theme=<name> · color=<token>:<hex> · reset=<token> · glass-color=<key>:<hex|> · pick=<tok:token|glass:key> · cursor=block|underline|bar · cursor-blink=on|off · font=<family> · ui-font=<family>
   // size=<n> · glass=Solid|Tinted|Frosted · bg=theme|gradient|frost|image · opacity|chrome|radius|gap|angle=<n>
   // stage=<key>:<value> · apply · cancel (Type and Glass) · font-menu=terminal|ui|close (Type tab) · import=<name> (from the clipboard) · import-file=<path> · behind=<color> · button=on|off · copy-layout · revert
-  // menu=more|theme|close (the ⋯ menus) · autohide=rail|hidden|off · view=themes|import|settings · select=<name> · edit=<name> · copy=<from>:<new> · delete-theme=<name> · export=<name> · save · discard
+  // menu=more|theme|close (the ⋯ menus) · autohide=rail|hidden|off · view=themes|import|settings|help · select=<name> · edit=<name> · copy=<from>:<new> · delete-theme=<name> · export=<name> · save · discard
   command(c, cx) {
     const i = c.indexOf("=");
     const verb = i < 0 ? c : c.slice(0, i), arg = i < 0 ? "" : c.slice(i + 1);
     const num = Number(arg);
     if (verb === "tab" && TABS.some(([id]) => id === arg)) { this.tab = arg; setShared(K.tab, arg); }
     else if (verb === "back" || (verb === "view" && arg === "themes" && this.view === "edit")) this.back(cx);
-    else if (verb === "view" && ["themes", "import", "settings"].includes(arg)) this.goTo(arg, cx);
+    else if (verb === "view" && ["themes", "import", "settings", "help"].includes(arg)) this.goTo(arg, cx);
     else if (verb === "autohide") arg === "off" ? this.setAutoHide(false, cx) : this.setAutoHide(true, cx, arg === "hidden" ? "hidden" : "rail");
     else if (verb === "theme" || verb === "select") this.stageTheme(arg, cx);
     else if (verb === "edit") this.editTheme(arg, cx);
@@ -1764,7 +1764,7 @@ export default class ThemeStudio extends View {
     const stop = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     const panel = edit
       ? { colors: () => this.colorsTab(t, s, cx), type: () => this.typeTab(t, s, cx), glass: () => this.glassTab(t, s, cx), agents: () => this.agentsTab(t, s, cx), details: () => this.detailsTab(t) }[this.tab]()
-      : this.view === "settings" ? this.settingsView(t) : this.libraryView(t, s, cx);
+      : this.view === "settings" ? this.settingsView(t) : this.view === "help" ? this.helpView(t) : this.libraryView(t, s, cx);
     const pinned = edit ? this.pinnedEditor(t) : null;
     // The Agents tab keeps what's selected, and its color, in a column of its own beside the settings.
     const side = edit && this.agentsWide() ? this.agentsSide(t, pinned) : null;
@@ -1824,12 +1824,12 @@ export default class ThemeStudio extends View {
   // --- header, tabs, preview and bottom bar ----------------------------------------
   header(t, s, overlay) {
     const edit = this.view === "edit", own = edit && ownedThemes().includes(this.editing);
-    const left = this.view === "settings"
+    const left = this.view === "settings" || this.view === "help"
       ? h_flex().gap(4).items_center().min_w(0)
         .child(this.iconButton("back", "back", "Back to the themes", t, (_e, cx) => this.goTo("themes", cx)))
         .child(v_flex().min_w(0)
           .child(div().id("crumb").on_mouse_down("left", (_e, cx) => cx.stop_propagation()).text_size(11).text_color(t.dim).cursor_pointer().hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.goTo("themes", cx)).child("Theme Studio ›"))
-          .child(div().text_size(13.5).font_semibold().child("Settings")))
+          .child(div().text_size(13.5).font_semibold().child(this.view === "help" ? "Help" : "Settings")))
       : edit
       ? h_flex().gap(4).items_center().min_w(0)
         .child(this.iconButton("back", "back", "Back to the themes", t, (_e, cx) => this.back(cx)))
@@ -1845,6 +1845,7 @@ export default class ThemeStudio extends View {
           .child(div().text_size(11.5).text_color(t.dim).truncate().child(`In use: ${s.theme_dark} (dark) · ${s.theme_light} (light)`)));
     return h_flex().h(52).flex_none().pl(12).pr(10).gap(4).items_center()
       .child(div().flex_1().min_w(0).child(left))
+      .when(this.view === "themes", (el) => el.child(this.iconButton("help", "help", "Help: what the Studio does and where to start", t, (_e, cx) => this.goTo("help", cx))))
       .when(this.view === "themes", (el) => el.child(this.iconButton("settings", "settings", "Settings: the sidebar and the palette icon", t, (_e, cx) => this.goTo("settings", cx))))
       .child(this.moreMenu(t))
       .when(!!overlay, (el) => el.child(this.iconButton("close", "close", "Close", t, () => closeOverlay(overlay))));
@@ -1929,6 +1930,7 @@ export default class ThemeStudio extends View {
       }
       return bar(said ? note(said.text, null, said.color) : note(own ? `Everything's saved to ${this.editing}` : `Herdr's theme: change anything, and Save makes ${as}`, own ? t.done : null));
     }
+    if (this.view === "help") return bar(note("The preview on the left is your window as it is now."));
     if (this.view === "settings") return bar(said ? note(said.text, null, said.color) : note("Settings apply right away. They're yours, not a theme's: changing themes keeps them."));
     const name = this.selected();
     if (ask && ask.kind === "layout") {
@@ -2451,6 +2453,36 @@ export default class ThemeStudio extends View {
   }
 
   // Settings that belong to the person, not a theme: they apply at once and stay across themes.
+  // Help: what the Studio is for and where to start, in plain words. The README has the details.
+  helpView(t) {
+    const p = (text) => div().text_size(12.5).text_color(t.muted).line_height("19px").child(text);
+    const step = (n, title, text) => h_flex().gap(10).items_start()
+      .child(div().size(20).flex_none().rounded(10).bg(t.accent).text_color(t.accent_foreground).text_size(11).font_semibold().flex().items_center().justify_center().child(String(n)))
+      .child(v_flex().gap(2).min_w(0).child(div().font_semibold().child(title)).child(p(text)));
+    const term = (name, text) => v_flex().gap(2).child(div().font_semibold().child(name)).child(p(text));
+    return v_flex().gap(22)
+      .child(v_flex().gap(8)
+        .child(div().text_size(15).font_semibold().child("Every lever Herdr's look has, in one window"))
+        .child(p("Herdr's own Settings let you pick a theme and not much else. Theme Studio lets you change every color, the fonts, see-through glass, pane frames and the agents list, and shows each change on the left before you keep it.")))
+      .child(this.section("Start here", t, v_flex().gap(14)
+        .child(step(1, "Pick a theme", "Click any card in the list to try it on the preview. Apply makes it yours."))
+        .child(step(2, "Change it", "Edit (the pen on a card) opens it. Change anything: nothing touches Herdr until you Save."))
+        .child(step(3, "Save", "Save writes it, and Herdr redraws. Discard puts it back as it was."))))
+      .child(this.section("The editor's tabs", t, v_flex().gap(12)
+        .child(term("Colors", "Every color Herdr paints with: background, text, accents, borders, the terminal's 16 colors."))
+        .child(term("Type", "The terminal and interface fonts, their size, and ligatures."))
+        .child(term("Glass", "Make the window see-through, frosted, or set over a gradient, picture or glow."))
+        .child(term("Agents", "How the agents list in the sidebar looks: cards, colors, what each row shows."))
+        .child(term("Details", "The theme's name, author and notes, for when you share it."))))
+      .child(this.section("Keys", t, v_flex().gap(6)
+        .child(this.row(t, "⌃⇧Y", p("Open or close the Studio")))
+        .child(this.row(t, "⌃⇧A", p("Put your theme on the layout you're in")))))
+      .child(this.section("Good to know", t, v_flex().gap(8)
+        .child(p("Herdr keeps a theme for each layout. Switch layouts and you'll see that layout's theme; ⌃⇧A brings yours."))
+        .child(p("Settings (the gear) has the auto-hiding sidebar, the palette icon and updates."))
+        .child(p("Hover any ⓘ for more about that setting."))));
+  }
+
   settingsView(t) {
     if (!this.personal()) return v_flex().gap(22).child(this.needsCopy(t, "Sidebar settings need your own copy of this layout",
       `Herdr's own layouts (${shared("layout")}) can't change. A copy can hide its sidebar and hold the palette icon; Herdr keeps updating everything else. The Studio closes for a moment while Herdr switches.`, "colors"))

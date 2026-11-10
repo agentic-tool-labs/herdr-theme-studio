@@ -1,11 +1,48 @@
-<p align="center"><img src="docs/herdr-ram.svg" width="310" alt="The Herdr ram, drawn in colored ASCII"></p>
+<p align="center"><img src="docs/herdr-ram.svg" width="150" alt="The Herdr ram, drawn in colored ASCII"></p>
 
 <h1 align="center">Herdr Desktop: Theme Studio</h1>
 
-One window for the [Herdr](https://herdr.dev) app's whole look: themes, every color token,
-fonts, glass, pane frames, the agents list and an auto-hiding sidebar. A big live preview shows
-every change before you keep it, and Save writes the files Herdr already redraws from. [RECIPE.md](RECIPE.md) is the brief to
-build it from scratch.
+<p align="center"><b>Herdr Desktop's theme controls are thin. Theme Studio gives you every lever a theme engine should have.</b></p>
+
+---
+
+You spend all day in Herdr, so it should look the way you like. Out of the box you can pick a
+theme and that's about it. Theme Studio lets you make Herdr yours: start from a theme you like,
+adjust anything until it feels right, and watch a live preview change as you go. Nothing changes in
+Herdr until you press Save, so it's safe to play.
+
+**TL;DR**
+
+- **Try themes on before you keep them.** 18 come with it, plus Herdr's own.
+- **Import** iTerm2, Ghostty, kitty and Alacritty themes.
+- **Change every color**, the terminal's 16 included.
+- **Pick your fonts**: terminal and interface, size, ligatures.
+- **Glass**: a see-through or frosted window, a gradient, your own picture or a soft glow. Popups too.
+- **Style the agents list**: cards, colors, what each row shows.
+- **Your theme on any layout** with one key (⌃⇧A).
+- **An auto-hiding sidebar.**
+- **Share your themes** with others.
+- **Updates itself.**
+
+<table><tr><td align="center"><img src="docs/screenshots/themes/abyssal-bloom.png" width="180" alt="abyssal-bloom"><br><sub>abyssal-bloom</sub></td><td align="center"><img src="docs/screenshots/themes/emerald-frost.png" width="180" alt="emerald-frost"><br><sub>emerald-frost</sub></td><td align="center"><img src="docs/screenshots/themes/for-ghost-green.png" width="180" alt="for-ghost-green"><br><sub>for-ghost-green</sub></td><td align="center"><img src="docs/screenshots/themes/for-ghost.png" width="180" alt="for-ghost"><br><sub>for-ghost</sub></td></tr></table>
+
+---
+
+![Theme Studio](preview.png)
+
+---
+
+## Start in a minute
+
+1. Install it (below), then press **⌃⇧Y** in Herdr.
+2. Click any theme in the list to see it. **Apply** makes it yours.
+3. Want to change it? Click the pen on its card, change anything, then **Save**.
+
+Stuck? The **?** button in the Studio's header explains the rest in plain words.
+
+<p align="center"><sub>Everything below is the detail.</sub></p>
+
+---
 
 ## Install
 
@@ -26,12 +63,7 @@ the Desktop for import.
 
 Requires Herdr app 0.1.13 or later on macOS (Frosted wallpaper and Bloom are macOS only).
 
-![Theme Studio](preview.png)
-
-**Working on the source:** `./install.sh` copies `mods/theme-studio` into `~/.config/herdr-app` and
-binds `ctrl-shift-y` (needs node). `./install.sh --remove` takes both out; your themes, settings and
-layouts stay. Re-run it after each edit: Herdr's hot reload doesn't follow symlinks, so it copies. An
-open Studio window keeps its old build until you close and reopen it.
+---
 
 ## Updating
 
@@ -54,9 +86,12 @@ github.com/agentic-tool-labs/herdr-theme-studio: replace my `mods/theme-studio/`
 repo's." Say "replace": by default an agent adds a second copy under a new name rather than
 overwrite.
 
+---
+
 ## Opening it
 
 - **⌃⇧Y** toggles the window.
+- **?** in its header opens Help: what the Studio does and where to start.
 - **⌃⇧A** applies your theme to the layout you're on, without opening the window (see [Settings](#settings)).
 - **The palette icon beside Settings** in the sidebar footer. Herdr's Settings screen can't take
   extra sections (Herdr rewrites it on every start), and its sidebar mod and built-in layouts can't
@@ -64,6 +99,8 @@ overwrite.
   clone of the sidebar mod (`mods/workspace-chrome-studio`) for the footer only. The Studio's
   [Settings](#settings) page adds or removes it, as does `button=on|off`; on Herdr's own layout
   `button=on` makes your copy first. On the narrow sidebar rail it gets its own row under Settings.
+
+---
 
 ## A tour
 
@@ -395,6 +432,8 @@ For new panes, add the line the Colors tab copies for you to `~/.zshrc` once:
 path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each prompt in Herdr panes
 (`TERM_PROGRAM=ghostty`), since programs such as vim change it.
 
+---
+
 ## Glass: how it works and its limits
 
 - **See-through terminals:** the terminal's own background goes fully transparent
@@ -415,6 +454,8 @@ path). The Studio never edits `~/.zshrc`. The hook re-sends the shape at each pr
   Undo all) run as a detached `herdr-app do` script that also
   reopens the Studio.
 
+---
+
 ## Commands
 
 Bind any of these in `keys.json` as `"theme-studio:<command>"`, or run `herdr-app do theme-studio.<command>`
@@ -430,12 +471,21 @@ staged until `save` (`cancel` drops them): `color=<token>:<hex>` · `reset=<toke
 GitHub: `github=<link>` (preview a file, list a folder, repo or gist) · `github-browse` · `github-pick=<name>` (a theme, file or folder in the list) · `remote=install|cancel` (the theme in preview) · `import-name=<name>` ·
 details windows: `info=<name>` (a card's ⓘ; no name closes it) · `welcome=<name>|reset` (show a branded theme's welcome, or forget which were shown)
 
+**Working on the source:** `./install.sh` copies `mods/theme-studio` into `~/.config/herdr-app` and
+binds `ctrl-shift-y` (needs node). `./install.sh --remove` takes both out; your themes, settings and
+layouts stay. Re-run it after each edit: Herdr's hot reload doesn't follow symlinks, so it copies. An
+open Studio window keeps its old build until you close and reopen it.
+
+---
+
 ## Checks
 
 ```sh
 node mods/theme-studio/lib.test.mjs          # pure logic: contrast, importers (incl. iTerm2 plist), glass and auto-hide tree edits, header patch
 herdr-app check ~/.config/herdr-app/mods/theme-studio
 ```
+
+---
 
 ## Files
 
@@ -457,6 +507,8 @@ docs/              design page source, the layout audition (design/), build plan
 RECIPE.md          the brief to build it from scratch
 keys.json          the key it expects
 ```
+
+---
 
 ## License
 
